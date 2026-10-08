@@ -1,0 +1,1 @@
+// Thin wrapper calling Whissle MCP

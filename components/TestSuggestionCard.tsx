@@ -1,0 +1,1 @@
+// Card component displaying test suggestions
