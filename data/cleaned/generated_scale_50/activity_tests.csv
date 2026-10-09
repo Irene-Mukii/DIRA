@@ -1,0 +1,51 @@
+test_id,learner_id,trigger_observation_ids,suggested_activity,activity_date,conducting_teacher_id,observed_outcome,outcome_observation_id,status
+TEST001,L002,"OBS006, OBS007",Pair reading with turn-taking roles,2025-03-07,T002,,,Pending
+TEST002,L002,"OBS005, OBS006",Unassigned group-leadership task,2026-04-27,T001,,,Pending
+TEST003,L003,"OBS009, OBS012",Pair reading with turn-taking roles,2025-07-25,T004,Needed support at the start but recovered after a short check-in.,,Completed
+TEST004,L005,"OBS022, OBS021",Teacher-guided checklist task,2025-05-05,T005,Completed the task with fewer prompts than before and explained the final answer.,,Completed
+TEST005,L006,"OBS026, OBS024",Role-reversal explanation task,2025-12-27,T002,,,Pending
+TEST006,L008,"OBS035, OBS031",Pair reading with turn-taking roles,2025-08-26,T001,,,Pending
+TEST007,L008,"OBS034, OBS032",Pair reading with turn-taking roles,2025-07-26,T001,Completed the task with fewer prompts than before and explained the final answer.,,Completed
+TEST008,L009,"OBS037, OBS036",Teacher-guided checklist task,2026-08-23,T005,Completed the task with fewer prompts than before and explained the final answer.,,Completed
+TEST009,L010,"OBS040, OBS041",Teacher-guided checklist task,2025-09-25,T005,,,In progress
+TEST010,L012,"OBS050, OBS047",Unassigned group-leadership task,2025-04-19,T002,Participated more confidently in the group and took a leadership role when asked.,,Completed
+TEST011,L012,"OBS048, OBS046",Pair reading with turn-taking roles,2026-03-23,T001,,,In progress
+TEST012,L013,"OBS051, OBS054",Unassigned group-leadership task,2025-12-05,T004,,,In progress
+TEST013,L013,"OBS052, OBS051",Role-reversal explanation task,2025-07-08,T001,,,In progress
+TEST014,L014,"OBS057, OBS060",Unassigned group-leadership task,2025-08-18,T002,Helped peers divide tasks and stayed with the task without repeated prompting.,,Completed
+TEST015,L018,"OBS077, OBS078",Unassigned group-leadership task,2026-02-11,T003,,,In progress
+TEST016,L018,"OBS078, OBS077",Teacher-guided checklist task,2025-10-23,T001,,,In progress
+TEST017,L020,"OBS087, OBS089",Role-reversal explanation task,2026-02-09,T004,,,Pending
+TEST018,L021,"OBS092, OBS093",Unassigned group-leadership task,2025-05-28,T005,Needed support at the start but recovered after a short check-in.,,Completed
+TEST019,L021,"OBS093, OBS090",Small-group problem solving without assigned leader,2025-04-11,T003,Participated more confidently in the group and took a leadership role when asked.,,Completed
+TEST020,L023,"OBS098, OBS099",Pair reading with turn-taking roles,2026-07-07,T002,Participated more confidently in the group and took a leadership role when asked.,,Completed
+TEST021,L024,"OBS103, OBS102",Small-group problem solving without assigned leader,2025-03-29,T001,,,In progress
+TEST022,L027,"OBS118, OBS116",Teacher-guided checklist task,2026-04-15,T001,,,In progress
+TEST023,L027,"OBS118, OBS114",Small-group problem solving without assigned leader,2026-01-24,T005,,,In progress
+TEST024,L028,"OBS120, OBS119",Role-reversal explanation task,2025-07-19,T001,,,Pending
+TEST025,L029,"OBS126, OBS128",Unassigned group-leadership task,2026-01-04,T002,,,Pending
+TEST026,L030,"OBS135, OBS133",Teacher-guided checklist task,2025-04-25,T004,,,Pending
+TEST027,L030,"OBS131, OBS133",Unassigned group-leadership task,2025-05-24,T004,Participated more confidently in the group and took a leadership role when asked.,,Completed
+TEST028,L031,"OBS138, OBS137",Short collaborative puzzle challenge,2026-03-02,T004,,,In progress
+TEST029,L032,"OBS141, OBS139",Teacher-guided checklist task,2026-05-05,T002,,,Pending
+TEST030,L032,"OBS139, OBS140",Role-reversal explanation task,2025-08-22,T004,,,Pending
+TEST031,L033,"OBS145, OBS142",Teacher-guided checklist task,2025-06-06,T003,,,Pending
+TEST032,L033,"OBS142, OBS143",Pair reading with turn-taking roles,2026-03-13,T003,,,Pending
+TEST033,L034,"OBS147, OBS149",Teacher-guided checklist task,2026-04-08,T001,Helped peers divide tasks and stayed with the task without repeated prompting.,,Completed
+TEST034,L035,"OBS152, OBS154",Small-group problem solving without assigned leader,2026-01-03,T002,,,In progress
+TEST035,L035,"OBS152, OBS154",Teacher-guided checklist task,2025-03-22,T002,,,Pending
+TEST036,L037,"OBS160, OBS161",Short collaborative puzzle challenge,2025-11-02,T005,Participated more confidently in the group and took a leadership role when asked.,,Completed
+TEST037,L039,"OBS170, OBS169",Role-reversal explanation task,2025-09-13,T003,Helped peers divide tasks and stayed with the task without repeated prompting.,,Completed
+TEST038,L039,"OBS171, OBS170",Unassigned group-leadership task,2026-08-23,T005,Participated more confidently in the group and took a leadership role when asked.,,Completed
+TEST039,L040,"OBS174, OBS172",Pair reading with turn-taking roles,2026-08-24,T001,Completed the task with fewer prompts than before and explained the final answer.,,Completed
+TEST040,L040,"OBS174, OBS173",Unassigned group-leadership task,2026-02-26,T005,Completed the task with fewer prompts than before and explained the final answer.,,Completed
+TEST041,L041,"OBS178, OBS175",Pair reading with turn-taking roles,2026-06-04,T002,,,In progress
+TEST042,L041,"OBS176, OBS177",Teacher-guided checklist task,2025-03-17,T004,Completed the task with fewer prompts than before and explained the final answer.,,Completed
+TEST043,L042,"OBS181, OBS182",Teacher-guided checklist task,2026-01-11,T004,Needed support at the start but recovered after a short check-in.,,Completed
+TEST044,L042,"OBS182, OBS180",Unassigned group-leadership task,2025-03-27,T005,Helped peers divide tasks and stayed with the task without repeated prompting.,,Completed
+TEST045,L043,"OBS184, OBS183",Pair reading with turn-taking roles,2026-03-26,T004,Needed support at the start but recovered after a short check-in.,,Completed
+TEST046,L044,"OBS191, OBS190",Role-reversal explanation task,2026-01-10,T005,Needed support at the start but recovered after a short check-in.,,Completed
+TEST047,L048,"OBS206, OBS208",Short collaborative puzzle challenge,2025-07-16,T004,,,Pending
+TEST048,L048,"OBS207, OBS208",Pair reading with turn-taking roles,2025-08-29,T005,,,In progress
+TEST049,L049,"OBS210, OBS209",Unassigned group-leadership task,2025-11-23,T002,,,Pending
+TEST050,L050,"OBS217, OBS215",Role-reversal explanation task,2025-09-29,T003,Completed the task with fewer prompts than before and explained the final answer.,,Completed
