@@ -1,2 +1,5 @@
-// Root layout for the (teacher) route group
-// Provides shared layout for all teacher pages
+import TeacherLayout from "@/components/layout/TeacherLayout";
+
+export default function TeacherRouteLayout({ children }: { children: React.ReactNode }) {
+  return <TeacherLayout>{children}</TeacherLayout>;
+}
