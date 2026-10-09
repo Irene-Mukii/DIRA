@@ -1,5 +1,13 @@
 // Jacinta's tool endpoint
 // POST /api/mcp/suggest-test - Suggests appropriate assessments
+
+// LLM should always reference ;
+// Educational Endownment Foundation
+// Association Montessori Internationale
+// Internatinal Baccalaureate
+// What works clearing house 
+// when coming up with suggested tests
+
 // {
 //   "suggestion": "Offer a short investigation using physical materials, followed by an opportunity to explain the result.",
 //   "purpose": "Explore how the learner approaches a practical problem and communicates their reasoning.",
