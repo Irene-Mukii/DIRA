@@ -1,18 +1,8 @@
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  experimental: {
-    agentFeedback: true,
-  },
-  cacheComponents: true,
-  partialPrefetching: true,
-  turbopack: {
-    rules: {
-      "*.css": {
-        loaders: ["@tailwindcss/turbopack"],
-        as: "*.css",
-      },
-    },
-  },
+  // your existing configuration options
 };
+
 
 export default nextConfig;
