@@ -1,0 +1,219 @@
+observation_id,learner_id,observation_date,term,teacher_id,activity_context,original_observation,source_type,possible_theme,verification_status
+OBS001,L001,2025-01-26,Term 1,T003,Whole-class discussion,Helped the group organize the task without being told.,Voice transcription,Task completion,Verified by multiple teachers
+OBS002,L001,2025-02-02,Term 1,T001,Group project,Helped the group organize the task without being told.,Text note,Reading comprehension,Verified by multiple teachers
+OBS003,L001,2025-08-14,Term 3,T004,Practical activity,Completed the task quickly but needed support to explain the reasoning.,Voice transcription,Confidence in class discussion,Verified by multiple teachers
+OBS004,L002,2025-10-12,Term 4,T002,Whole-class discussion,Stayed engaged in the task but was hesitant to speak in front of the class.,Voice transcription,Peer support,Repeated pattern
+OBS005,L002,2025-09-28,Term 3,T001,Reading session,"Struggled to start, then improved after a short teacher check-in.",Teacher chat,Independent problem solving,Inconclusive
+OBS006,L002,2025-10-28,Term 4,T005,Math task,Kept re-engaging after distraction and eventually finished the task.,Voice transcription,Collaboration,Needs more evidence
+OBS007,L002,2025-10-24,Term 4,T001,Math task,Was quiet at first but contributed to the discussion once prompted.,Teacher chat,Self-regulation,Verified by multiple teachers
+OBS008,L002,2026-01-09,Term 1,T002,Independent task,Volunteered an answer and explained thinking to peers.,Voice transcription,Task completion,Needs more evidence
+OBS009,L003,2025-06-17,Term 2,T004,Pair work,Completed the task quickly but needed support to explain the reasoning.,Text note,Peer support,Pending
+OBS010,L003,2025-08-23,Term 3,T001,Math task,Kept re-engaging after distraction and eventually finished the task.,Voice transcription,Following instructions,Inconclusive
+OBS011,L003,2025-11-19,Term 4,T002,Reading session,"Struggled to start, then improved after a short teacher check-in.",Teacher chat,Confidence in class discussion,Repeated pattern
+OBS012,L003,2025-05-23,Term 2,T002,Reading session,Completed the task quickly but needed support to explain the reasoning.,Teacher chat,Task completion,Verified by multiple teachers
+OBS013,L004,2025-08-13,Term 3,T002,Practical activity,Helped the group organize the task without being told.,Voice transcription,Confidence in class discussion,Needs more evidence
+OBS014,L004,2026-03-09,Term 1,T005,Group project,Worked well with a partner and encouraged another learner to continue.,Teacher chat,Reading comprehension,Repeated pattern
+OBS015,L004,2026-07-21,Term 3,T001,Reading session,Needed a second explanation but then completed the task correctly.,Phone callback,Peer support,Pending
+OBS016,L004,2025-10-28,Term 4,T004,Whole-class discussion,Volunteered an answer and explained thinking to peers.,Text note,Reading comprehension,Pending
+OBS017,L004,2025-11-02,Term 4,T005,Practical activity,Needed repeated reminders to stay with the activity.,Voice transcription,Task completion,Repeated pattern
+OBS018,L005,2025-01-20,Term 1,T001,Independent task,Needed repeated reminders to stay with the activity.,Voice transcription,Independent problem solving,Verified by multiple teachers
+OBS019,L005,2025-03-12,Term 1,T005,Math task,Stayed engaged in the task but was hesitant to speak in front of the class.,Text note,Self-regulation,Inconclusive
+OBS020,L005,2026-03-10,Term 1,T002,Practical activity,Was quiet at first but contributed to the discussion once prompted.,Teacher chat,Peer support,Verified by multiple teachers
+OBS021,L005,2026-06-14,Term 2,T004,Group project,Volunteered an answer and explained thinking to peers.,Voice transcription,Task completion,Inconclusive
+OBS022,L005,2025-08-24,Term 3,T005,Whole-class discussion,Helped the group organize the task without being told.,Text note,Independent problem solving,Pending
+OBS023,L005,2025-12-05,Term 4,T001,Practical activity,Was quiet at first but contributed to the discussion once prompted.,Teacher chat,Following instructions,Inconclusive
+OBS024,L006,2026-08-08,Term 3,T005,Pair work,Was quiet at first but contributed to the discussion once prompted.,Teacher chat,Following instructions,Pending
+OBS025,L006,2025-04-10,Term 2,T004,Independent task,Worked well with a partner and encouraged another learner to continue.,Voice transcription,Independent problem solving,Pending
+OBS026,L006,2026-02-17,Term 1,T003,Math task,Needed repeated reminders to stay with the activity.,Teacher chat,Confidence in class discussion,Verified by multiple teachers
+OBS027,L006,2025-07-07,Term 3,T003,Pair work,Was quiet at first but contributed to the discussion once prompted.,Voice transcription,Participation,Inconclusive
+OBS028,L007,2025-02-21,Term 1,T005,Math task,Helped peers divide tasks and stayed focused on the group goal.,Text note,Confidence in class discussion,Verified by multiple teachers
+OBS029,L007,2026-05-13,Term 2,T004,Whole-class discussion,Worked well with a partner and encouraged another learner to continue.,Text note,Persistence,Pending
+OBS030,L007,2026-02-04,Term 1,T003,Math task,"Struggled to start, then improved after a short teacher check-in.",Teacher chat,Confidence in class discussion,Needs more evidence
+OBS031,L008,2025-08-11,Term 3,T001,Practical activity,Helped peers divide tasks and stayed focused on the group goal.,Voice transcription,Collaboration,Inconclusive
+OBS032,L008,2026-05-04,Term 2,T005,Math task,Helped the group organize the task without being told.,Text note,Independent problem solving,Inconclusive
+OBS033,L008,2025-03-11,Term 1,T002,Pair work,Needed a second explanation but then completed the task correctly.,Text note,Task completion,Inconclusive
+OBS034,L008,2025-02-10,Term 1,T005,Group project,Worked well with a partner and encouraged another learner to continue.,Phone callback,Self-regulation,Needs more evidence
+OBS035,L008,2025-11-18,Term 4,T002,Independent task,Volunteered an answer and explained thinking to peers.,Teacher chat,Peer support,Pending
+OBS036,L009,2026-04-15,Term 2,T005,Practical activity,Needed repeated reminders to stay with the activity.,Phone callback,Confidence in class discussion,Repeated pattern
+OBS037,L009,2025-03-12,Term 1,T002,Independent task,Volunteered an answer and explained thinking to peers.,Voice transcription,Reading comprehension,Repeated pattern
+OBS038,L009,2025-04-17,Term 2,T002,Independent task,Needed a second explanation but then completed the task correctly.,Text note,Self-regulation,Repeated pattern
+OBS039,L010,2025-12-18,Term 4,T002,Reading session,Completed the task quickly but needed support to explain the reasoning.,Phone callback,Collaboration,Pending
+OBS040,L010,2026-03-10,Term 1,T003,Group project,Helped peers divide tasks and stayed focused on the group goal.,Text note,Self-regulation,Needs more evidence
+OBS041,L010,2026-03-29,Term 1,T005,Reading session,Worked well with a partner and encouraged another learner to continue.,Voice transcription,Independent problem solving,Needs more evidence
+OBS042,L010,2026-07-13,Term 3,T001,Math task,Kept re-engaging after distraction and eventually finished the task.,Text note,Persistence,Needs more evidence
+OBS043,L011,2025-11-12,Term 4,T003,Math task,Helped peers divide tasks and stayed focused on the group goal.,Text note,Following instructions,Pending
+OBS044,L011,2025-12-29,Term 4,T005,Math task,Worked well with a partner and encouraged another learner to continue.,Text note,Following instructions,Needs more evidence
+OBS045,L011,2025-07-01,Term 3,T004,Group project,Asked a clarifying question before starting and worked independently.,Phone callback,Persistence,Needs more evidence
+OBS046,L012,2025-06-13,Term 2,T001,Pair work,Helped peers divide tasks and stayed focused on the group goal.,Text note,Following instructions,Verified by multiple teachers
+OBS047,L012,2025-12-25,Term 4,T003,Math task,Needed repeated reminders to stay with the activity.,Teacher chat,Peer support,Repeated pattern
+OBS048,L012,2025-03-13,Term 1,T003,Independent task,Worked well with a partner and encouraged another learner to continue.,Phone callback,Collaboration,Pending
+OBS049,L012,2025-09-25,Term 3,T002,Practical activity,Stayed engaged in the task but was hesitant to speak in front of the class.,Phone callback,Peer support,Verified by multiple teachers
+OBS050,L012,2026-06-08,Term 2,T001,Pair work,Was quiet at first but contributed to the discussion once prompted.,Teacher chat,Collaboration,Inconclusive
+OBS051,L013,2026-01-08,Term 1,T004,Group project,Kept re-engaging after distraction and eventually finished the task.,Voice transcription,Self-regulation,Inconclusive
+OBS052,L013,2025-11-13,Term 4,T004,Independent task,Worked well with a partner and encouraged another learner to continue.,Text note,Following instructions,Verified by multiple teachers
+OBS053,L013,2026-01-24,Term 1,T002,Practical activity,Completed the task quickly but needed support to explain the reasoning.,Voice transcription,Self-regulation,Repeated pattern
+OBS054,L013,2025-08-04,Term 3,T004,Math task,Kept re-engaging after distraction and eventually finished the task.,Teacher chat,Following instructions,Inconclusive
+OBS055,L014,2025-06-23,Term 2,T001,Independent task,Needed repeated reminders to stay with the activity.,Phone callback,Following instructions,Needs more evidence
+OBS056,L014,2025-05-31,Term 2,T001,Group project,Was quiet at first but contributed to the discussion once prompted.,Voice transcription,Participation,Verified by multiple teachers
+OBS057,L014,2026-08-13,Term 3,T002,Reading session,Worked well with a partner and encouraged another learner to continue.,Text note,Confidence in class discussion,Pending
+OBS058,L014,2025-04-20,Term 2,T004,Whole-class discussion,Asked a clarifying question before starting and worked independently.,Teacher chat,Collaboration,Inconclusive
+OBS059,L014,2025-09-13,Term 3,T001,Pair work,Asked a clarifying question before starting and worked independently.,Phone callback,Participation,Inconclusive
+OBS060,L014,2026-06-01,Term 2,T004,Math task,"Struggled to start, then improved after a short teacher check-in.",Teacher chat,Participation,Repeated pattern
+OBS061,L015,2025-10-11,Term 4,T005,Pair work,Was quiet at first but contributed to the discussion once prompted.,Voice transcription,Self-regulation,Needs more evidence
+OBS062,L015,2025-10-06,Term 4,T003,Independent task,Needed repeated reminders to stay with the activity.,Teacher chat,Confidence in class discussion,Needs more evidence
+OBS063,L015,2025-03-07,Term 1,T004,Pair work,Kept re-engaging after distraction and eventually finished the task.,Teacher chat,Collaboration,Needs more evidence
+OBS064,L015,2026-03-07,Term 1,T004,Math task,Helped peers divide tasks and stayed focused on the group goal.,Teacher chat,Participation,Pending
+OBS065,L016,2025-11-02,Term 4,T004,Math task,Worked well with a partner and encouraged another learner to continue.,Text note,Participation,Needs more evidence
+OBS066,L016,2025-10-07,Term 4,T004,Pair work,Helped peers divide tasks and stayed focused on the group goal.,Teacher chat,Confidence in class discussion,Verified by multiple teachers
+OBS067,L016,2025-05-11,Term 2,T005,Practical activity,Helped peers divide tasks and stayed focused on the group goal.,Voice transcription,Independent problem solving,Verified by multiple teachers
+OBS068,L016,2025-05-19,Term 2,T004,Whole-class discussion,Helped peers divide tasks and stayed focused on the group goal.,Phone callback,Following instructions,Verified by multiple teachers
+OBS069,L016,2025-12-01,Term 4,T003,Math task,Worked well with a partner and encouraged another learner to continue.,Teacher chat,Self-regulation,Pending
+OBS070,L017,2025-01-20,Term 1,T005,Group project,Helped the group organize the task without being told.,Voice transcription,Collaboration,Needs more evidence
+OBS071,L017,2025-07-24,Term 3,T001,Practical activity,Stayed engaged in the task but was hesitant to speak in front of the class.,Voice transcription,Task completion,Needs more evidence
+OBS072,L017,2026-04-22,Term 2,T003,Math task,Helped the group organize the task without being told.,Text note,Self-regulation,Pending
+OBS073,L017,2026-08-16,Term 3,T001,Independent task,Worked well with a partner and encouraged another learner to continue.,Text note,Independent problem solving,Inconclusive
+OBS074,L017,2025-09-06,Term 3,T001,Reading session,Completed the task quickly but needed support to explain the reasoning.,Voice transcription,Task completion,Pending
+OBS075,L017,2025-12-22,Term 4,T005,Pair work,Volunteered an answer and explained thinking to peers.,Voice transcription,Persistence,Verified by multiple teachers
+OBS076,L018,2026-03-20,Term 1,T003,Reading session,"Struggled to start, then improved after a short teacher check-in.",Teacher chat,Confidence in class discussion,Inconclusive
+OBS077,L018,2025-10-04,Term 4,T005,Math task,"Struggled to start, then improved after a short teacher check-in.",Phone callback,Peer support,Needs more evidence
+OBS078,L018,2025-03-30,Term 1,T003,Pair work,Was quiet at first but contributed to the discussion once prompted.,Teacher chat,Peer support,Pending
+OBS079,L019,2025-11-29,Term 4,T002,Pair work,Was quiet at first but contributed to the discussion once prompted.,Phone callback,Peer support,Repeated pattern
+OBS080,L019,2025-10-10,Term 4,T005,Group project,Stayed engaged in the task but was hesitant to speak in front of the class.,Teacher chat,Reading comprehension,Needs more evidence
+OBS081,L019,2026-05-03,Term 2,T004,Pair work,Needed repeated reminders to stay with the activity.,Teacher chat,Following instructions,Repeated pattern
+OBS082,L019,2026-08-19,Term 3,T003,Pair work,Kept re-engaging after distraction and eventually finished the task.,Phone callback,Peer support,Verified by multiple teachers
+OBS083,L019,2025-10-05,Term 4,T003,Independent task,Needed repeated reminders to stay with the activity.,Phone callback,Independent problem solving,Inconclusive
+OBS084,L019,2025-07-09,Term 3,T002,Whole-class discussion,"Struggled to start, then improved after a short teacher check-in.",Phone callback,Independent problem solving,Needs more evidence
+OBS085,L020,2025-08-21,Term 3,T003,Whole-class discussion,Needed repeated reminders to stay with the activity.,Phone callback,Collaboration,Pending
+OBS086,L020,2026-07-21,Term 3,T003,Reading session,Asked a clarifying question before starting and worked independently.,Teacher chat,Independent problem solving,Pending
+OBS087,L020,2026-08-11,Term 3,T003,Pair work,"Struggled to start, then improved after a short teacher check-in.",Text note,Collaboration,Repeated pattern
+OBS088,L020,2026-05-05,Term 2,T001,Math task,Needed a second explanation but then completed the task correctly.,Voice transcription,Task completion,Pending
+OBS089,L020,2025-06-05,Term 2,T002,Math task,Needed repeated reminders to stay with the activity.,Voice transcription,Reading comprehension,Verified by multiple teachers
+OBS090,L021,2026-06-20,Term 2,T004,Pair work,"Struggled to start, then improved after a short teacher check-in.",Teacher chat,Self-regulation,Inconclusive
+OBS091,L021,2025-03-03,Term 1,T005,Reading session,Needed a second explanation but then completed the task correctly.,Text note,Following instructions,Repeated pattern
+OBS092,L021,2025-03-25,Term 1,T002,Whole-class discussion,Asked a clarifying question before starting and worked independently.,Text note,Collaboration,Verified by multiple teachers
+OBS093,L021,2026-04-07,Term 2,T005,Pair work,Volunteered an answer and explained thinking to peers.,Phone callback,Participation,Pending
+OBS094,L022,2025-09-28,Term 3,T005,Reading session,Was quiet at first but contributed to the discussion once prompted.,Text note,Confidence in class discussion,Repeated pattern
+OBS095,L022,2025-05-26,Term 2,T001,Group project,Asked a clarifying question before starting and worked independently.,Phone callback,Participation,Pending
+OBS096,L022,2026-04-25,Term 2,T003,Reading session,Worked well with a partner and encouraged another learner to continue.,Teacher chat,Participation,Pending
+OBS097,L022,2025-02-10,Term 1,T004,Reading session,Kept re-engaging after distraction and eventually finished the task.,Voice transcription,Independent problem solving,Needs more evidence
+OBS098,L023,2025-10-03,Term 4,T005,Group project,Asked a clarifying question before starting and worked independently.,Teacher chat,Self-regulation,Needs more evidence
+OBS099,L023,2026-08-23,Term 3,T004,Reading session,"Struggled to start, then improved after a short teacher check-in.",Teacher chat,Peer support,Verified by multiple teachers
+OBS100,L023,2025-12-08,Term 4,T003,Reading session,Needed a second explanation but then completed the task correctly.,Phone callback,Persistence,Verified by multiple teachers
+OBS101,L024,2026-02-15,Term 1,T005,Group project,Volunteered an answer and explained thinking to peers.,Phone callback,Independent problem solving,Verified by multiple teachers
+OBS102,L024,2026-06-11,Term 2,T001,Reading session,"Struggled to start, then improved after a short teacher check-in.",Text note,Reading comprehension,Repeated pattern
+OBS103,L024,2026-05-26,Term 2,T004,Math task,Needed repeated reminders to stay with the activity.,Phone callback,Participation,Verified by multiple teachers
+OBS104,L024,2025-05-05,Term 2,T001,Reading session,Was quiet at first but contributed to the discussion once prompted.,Phone callback,Reading comprehension,Pending
+OBS105,L024,2026-07-20,Term 3,T004,Group project,Was quiet at first but contributed to the discussion once prompted.,Voice transcription,Participation,Pending
+OBS106,L025,2026-05-26,Term 2,T003,Practical activity,Completed the task quickly but needed support to explain the reasoning.,Teacher chat,Participation,Needs more evidence
+OBS107,L025,2026-04-13,Term 2,T005,Whole-class discussion,Needed repeated reminders to stay with the activity.,Voice transcription,Self-regulation,Verified by multiple teachers
+OBS108,L025,2025-12-15,Term 4,T005,Independent task,Helped peers divide tasks and stayed focused on the group goal.,Phone callback,Task completion,Inconclusive
+OBS109,L025,2026-05-17,Term 2,T002,Pair work,"Struggled to start, then improved after a short teacher check-in.",Teacher chat,Participation,Repeated pattern
+OBS110,L026,2025-09-02,Term 3,T005,Pair work,Was quiet at first but contributed to the discussion once prompted.,Teacher chat,Collaboration,Repeated pattern
+OBS111,L026,2026-04-30,Term 2,T004,Pair work,Asked a clarifying question before starting and worked independently.,Voice transcription,Confidence in class discussion,Inconclusive
+OBS112,L026,2026-08-28,Term 3,T003,Math task,Needed a second explanation but then completed the task correctly.,Teacher chat,Independent problem solving,Inconclusive
+OBS113,L026,2026-04-13,Term 2,T001,Reading session,Asked a clarifying question before starting and worked independently.,Text note,Independent problem solving,Verified by multiple teachers
+OBS114,L027,2025-12-13,Term 4,T005,Reading session,Worked well with a partner and encouraged another learner to continue.,Phone callback,Reading comprehension,Verified by multiple teachers
+OBS115,L027,2025-11-21,Term 4,T004,Math task,Helped peers divide tasks and stayed focused on the group goal.,Text note,Self-regulation,Needs more evidence
+OBS116,L027,2025-04-03,Term 2,T004,Group project,Needed a second explanation but then completed the task correctly.,Phone callback,Collaboration,Pending
+OBS117,L027,2025-11-29,Term 4,T001,Independent task,Kept re-engaging after distraction and eventually finished the task.,Text note,Following instructions,Inconclusive
+OBS118,L027,2026-02-26,Term 1,T005,Reading session,Helped the group organize the task without being told.,Teacher chat,Task completion,Needs more evidence
+OBS119,L028,2026-08-21,Term 3,T002,Whole-class discussion,"Struggled to start, then improved after a short teacher check-in.",Teacher chat,Self-regulation,Pending
+OBS120,L028,2026-04-22,Term 2,T003,Reading session,Volunteered an answer and explained thinking to peers.,Phone callback,Persistence,Repeated pattern
+OBS121,L028,2026-04-13,Term 2,T003,Whole-class discussion,Worked well with a partner and encouraged another learner to continue.,Voice transcription,Following instructions,Verified by multiple teachers
+OBS122,L028,2026-08-09,Term 3,T003,Practical activity,Completed the task quickly but needed support to explain the reasoning.,Phone callback,Collaboration,Verified by multiple teachers
+OBS123,L028,2025-10-09,Term 4,T001,Practical activity,Helped peers divide tasks and stayed focused on the group goal.,Teacher chat,Self-regulation,Needs more evidence
+OBS124,L028,2025-12-27,Term 4,T002,Reading session,Was quiet at first but contributed to the discussion once prompted.,Text note,Independent problem solving,Pending
+OBS125,L029,2026-03-28,Term 1,T001,Practical activity,Kept re-engaging after distraction and eventually finished the task.,Voice transcription,Self-regulation,Repeated pattern
+OBS126,L029,2026-03-02,Term 1,T002,Whole-class discussion,Asked a clarifying question before starting and worked independently.,Phone callback,Reading comprehension,Inconclusive
+OBS127,L029,2025-10-07,Term 4,T002,Independent task,"Struggled to start, then improved after a short teacher check-in.",Phone callback,Peer support,Pending
+OBS128,L029,2026-04-25,Term 2,T001,Whole-class discussion,Was quiet at first but contributed to the discussion once prompted.,Teacher chat,Reading comprehension,Repeated pattern
+OBS129,L029,2025-04-03,Term 2,T004,Group project,Completed the task quickly but needed support to explain the reasoning.,Teacher chat,Peer support,Repeated pattern
+OBS130,L030,2026-01-16,Term 1,T001,Reading session,Was quiet at first but contributed to the discussion once prompted.,Phone callback,Task completion,Needs more evidence
+OBS131,L030,2025-03-06,Term 1,T004,Reading session,Completed the task quickly but needed support to explain the reasoning.,Voice transcription,Confidence in class discussion,Pending
+OBS132,L030,2025-02-08,Term 1,T003,Pair work,Needed repeated reminders to stay with the activity.,Teacher chat,Participation,Repeated pattern
+OBS133,L030,2026-07-08,Term 3,T004,Practical activity,Asked a clarifying question before starting and worked independently.,Voice transcription,Participation,Inconclusive
+OBS134,L030,2026-02-22,Term 1,T003,Group project,Stayed engaged in the task but was hesitant to speak in front of the class.,Text note,Peer support,Pending
+OBS135,L030,2026-01-12,Term 1,T005,Reading session,Volunteered an answer and explained thinking to peers.,Text note,Independent problem solving,Verified by multiple teachers
+OBS136,L031,2025-08-06,Term 3,T005,Group project,Helped peers divide tasks and stayed focused on the group goal.,Text note,Confidence in class discussion,Inconclusive
+OBS137,L031,2025-07-30,Term 3,T001,Math task,Was quiet at first but contributed to the discussion once prompted.,Text note,Peer support,Needs more evidence
+OBS138,L031,2025-01-03,Term 1,T003,Math task,Asked a clarifying question before starting and worked independently.,Phone callback,Confidence in class discussion,Pending
+OBS139,L032,2025-05-15,Term 2,T001,Independent task,Was quiet at first but contributed to the discussion once prompted.,Voice transcription,Confidence in class discussion,Repeated pattern
+OBS140,L032,2025-02-23,Term 1,T002,Reading session,Worked well with a partner and encouraged another learner to continue.,Voice transcription,Participation,Verified by multiple teachers
+OBS141,L032,2026-01-06,Term 1,T005,Practical activity,Needed a second explanation but then completed the task correctly.,Text note,Task completion,Pending
+OBS142,L033,2026-04-15,Term 2,T001,Group project,"Struggled to start, then improved after a short teacher check-in.",Teacher chat,Independent problem solving,Verified by multiple teachers
+OBS143,L033,2026-03-31,Term 1,T001,Group project,Kept re-engaging after distraction and eventually finished the task.,Voice transcription,Confidence in class discussion,Repeated pattern
+OBS144,L033,2026-08-23,Term 3,T005,Reading session,Kept re-engaging after distraction and eventually finished the task.,Phone callback,Participation,Inconclusive
+OBS145,L033,2026-03-17,Term 1,T001,Math task,Needed a second explanation but then completed the task correctly.,Text note,Persistence,Verified by multiple teachers
+OBS146,L033,2025-08-22,Term 3,T004,Independent task,"Struggled to start, then improved after a short teacher check-in.",Voice transcription,Peer support,Verified by multiple teachers
+OBS147,L034,2025-09-19,Term 3,T003,Whole-class discussion,Helped the group organize the task without being told.,Voice transcription,Persistence,Pending
+OBS148,L034,2026-01-17,Term 1,T002,Practical activity,Helped peers divide tasks and stayed focused on the group goal.,Phone callback,Independent problem solving,Verified by multiple teachers
+OBS149,L034,2025-12-29,Term 4,T004,Math task,Helped peers divide tasks and stayed focused on the group goal.,Phone callback,Peer support,Pending
+OBS150,L034,2026-08-15,Term 3,T005,Whole-class discussion,Asked a clarifying question before starting and worked independently.,Text note,Independent problem solving,Repeated pattern
+OBS151,L034,2026-07-24,Term 3,T003,Group project,Completed the task quickly but needed support to explain the reasoning.,Teacher chat,Reading comprehension,Inconclusive
+OBS152,L035,2025-10-01,Term 4,T001,Whole-class discussion,Completed the task quickly but needed support to explain the reasoning.,Phone callback,Peer support,Repeated pattern
+OBS153,L035,2025-01-07,Term 1,T002,Math task,Asked a clarifying question before starting and worked independently.,Teacher chat,Independent problem solving,Needs more evidence
+OBS154,L035,2025-02-01,Term 1,T001,Reading session,Was quiet at first but contributed to the discussion once prompted.,Teacher chat,Peer support,Needs more evidence
+OBS155,L036,2025-11-16,Term 4,T003,Math task,Needed a second explanation but then completed the task correctly.,Text note,Confidence in class discussion,Inconclusive
+OBS156,L036,2025-02-20,Term 1,T001,Independent task,"Struggled to start, then improved after a short teacher check-in.",Teacher chat,Task completion,Verified by multiple teachers
+OBS157,L036,2026-03-01,Term 1,T003,Whole-class discussion,Needed a second explanation but then completed the task correctly.,Voice transcription,Self-regulation,Inconclusive
+OBS158,L036,2026-05-14,Term 2,T005,Reading session,Stayed engaged in the task but was hesitant to speak in front of the class.,Voice transcription,Collaboration,Needs more evidence
+OBS159,L036,2025-11-05,Term 4,T002,Math task,Asked a clarifying question before starting and worked independently.,Phone callback,Peer support,Pending
+OBS160,L037,2026-05-25,Term 2,T004,Whole-class discussion,Asked a clarifying question before starting and worked independently.,Text note,Reading comprehension,Inconclusive
+OBS161,L037,2025-12-29,Term 4,T001,Pair work,Helped peers divide tasks and stayed focused on the group goal.,Teacher chat,Independent problem solving,Repeated pattern
+OBS162,L037,2026-08-13,Term 3,T004,Practical activity,Worked well with a partner and encouraged another learner to continue.,Teacher chat,Self-regulation,Pending
+OBS163,L038,2025-01-22,Term 1,T003,Whole-class discussion,"Struggled to start, then improved after a short teacher check-in.",Phone callback,Independent problem solving,Verified by multiple teachers
+OBS164,L038,2025-04-19,Term 2,T002,Pair work,Worked well with a partner and encouraged another learner to continue.,Teacher chat,Self-regulation,Repeated pattern
+OBS165,L038,2025-08-15,Term 3,T003,Math task,Helped the group organize the task without being told.,Text note,Peer support,Repeated pattern
+OBS166,L038,2025-06-01,Term 2,T002,Group project,Asked a clarifying question before starting and worked independently.,Text note,Task completion,Needs more evidence
+OBS167,L038,2025-03-19,Term 1,T002,Math task,"Struggled to start, then improved after a short teacher check-in.",Teacher chat,Task completion,Inconclusive
+OBS168,L038,2025-11-27,Term 4,T003,Whole-class discussion,Stayed engaged in the task but was hesitant to speak in front of the class.,Phone callback,Self-regulation,Inconclusive
+OBS169,L039,2025-12-27,Term 4,T005,Group project,Completed the task quickly but needed support to explain the reasoning.,Voice transcription,Collaboration,Repeated pattern
+OBS170,L039,2025-10-21,Term 4,T001,Reading session,Needed a second explanation but then completed the task correctly.,Teacher chat,Participation,Inconclusive
+OBS171,L039,2026-07-22,Term 3,T001,Pair work,Was quiet at first but contributed to the discussion once prompted.,Teacher chat,Reading comprehension,Needs more evidence
+OBS172,L040,2026-04-07,Term 2,T001,Math task,Kept re-engaging after distraction and eventually finished the task.,Voice transcription,Reading comprehension,Needs more evidence
+OBS173,L040,2025-02-10,Term 1,T002,Reading session,"Struggled to start, then improved after a short teacher check-in.",Text note,Peer support,Repeated pattern
+OBS174,L040,2025-10-17,Term 4,T004,Pair work,Kept re-engaging after distraction and eventually finished the task.,Voice transcription,Peer support,Pending
+OBS175,L041,2025-04-07,Term 2,T005,Reading session,Worked well with a partner and encouraged another learner to continue.,Text note,Peer support,Pending
+OBS176,L041,2026-08-20,Term 3,T002,Independent task,Completed the task quickly but needed support to explain the reasoning.,Teacher chat,Confidence in class discussion,Inconclusive
+OBS177,L041,2025-03-28,Term 1,T003,Practical activity,Worked well with a partner and encouraged another learner to continue.,Phone callback,Confidence in class discussion,Inconclusive
+OBS178,L041,2025-04-06,Term 2,T004,Practical activity,Volunteered an answer and explained thinking to peers.,Text note,Following instructions,Repeated pattern
+OBS179,L041,2026-05-13,Term 2,T002,Whole-class discussion,Volunteered an answer and explained thinking to peers.,Voice transcription,Reading comprehension,Inconclusive
+OBS180,L042,2025-12-11,Term 4,T005,Whole-class discussion,Needed repeated reminders to stay with the activity.,Text note,Participation,Pending
+OBS181,L042,2026-02-25,Term 1,T003,Reading session,Was quiet at first but contributed to the discussion once prompted.,Phone callback,Participation,Needs more evidence
+OBS182,L042,2026-07-01,Term 3,T002,Independent task,"Struggled to start, then improved after a short teacher check-in.",Text note,Peer support,Inconclusive
+OBS183,L043,2026-04-18,Term 2,T003,Math task,Worked well with a partner and encouraged another learner to continue.,Teacher chat,Confidence in class discussion,Needs more evidence
+OBS184,L043,2025-05-22,Term 2,T003,Group project,"Struggled to start, then improved after a short teacher check-in.",Voice transcription,Reading comprehension,Pending
+OBS185,L043,2025-10-19,Term 4,T001,Math task,Asked a clarifying question before starting and worked independently.,Text note,Persistence,Pending
+OBS186,L043,2025-08-16,Term 3,T004,Independent task,Helped peers divide tasks and stayed focused on the group goal.,Teacher chat,Reading comprehension,Repeated pattern
+OBS187,L043,2025-08-30,Term 3,T004,Group project,Volunteered an answer and explained thinking to peers.,Voice transcription,Peer support,Needs more evidence
+OBS188,L043,2025-05-21,Term 2,T001,Independent task,"Struggled to start, then improved after a short teacher check-in.",Text note,Participation,Verified by multiple teachers
+OBS189,L044,2025-03-23,Term 1,T001,Independent task,Was quiet at first but contributed to the discussion once prompted.,Teacher chat,Independent problem solving,Repeated pattern
+OBS190,L044,2025-09-01,Term 3,T003,Group project,Stayed engaged in the task but was hesitant to speak in front of the class.,Voice transcription,Independent problem solving,Verified by multiple teachers
+OBS191,L044,2026-07-03,Term 3,T001,Reading session,Was quiet at first but contributed to the discussion once prompted.,Phone callback,Persistence,Pending
+OBS192,L045,2025-09-04,Term 3,T005,Pair work,Asked a clarifying question before starting and worked independently.,Voice transcription,Reading comprehension,Repeated pattern
+OBS193,L045,2025-03-11,Term 1,T005,Practical activity,Helped peers divide tasks and stayed focused on the group goal.,Teacher chat,Collaboration,Verified by multiple teachers
+OBS194,L045,2026-01-18,Term 1,T003,Reading session,Helped peers divide tasks and stayed focused on the group goal.,Voice transcription,Peer support,Needs more evidence
+OBS195,L045,2025-04-17,Term 2,T005,Reading session,Volunteered an answer and explained thinking to peers.,Phone callback,Confidence in class discussion,Verified by multiple teachers
+OBS196,L045,2026-05-06,Term 2,T002,Math task,Stayed engaged in the task but was hesitant to speak in front of the class.,Voice transcription,Self-regulation,Needs more evidence
+OBS197,L046,2025-07-24,Term 3,T001,Independent task,Completed the task quickly but needed support to explain the reasoning.,Teacher chat,Self-regulation,Pending
+OBS198,L046,2025-07-15,Term 3,T003,Independent task,Helped peers divide tasks and stayed focused on the group goal.,Phone callback,Self-regulation,Pending
+OBS199,L046,2026-01-12,Term 1,T004,Pair work,"Struggled to start, then improved after a short teacher check-in.",Teacher chat,Peer support,Needs more evidence
+OBS200,L047,2026-05-25,Term 2,T003,Math task,Completed the task quickly but needed support to explain the reasoning.,Teacher chat,Independent problem solving,Verified by multiple teachers
+OBS201,L047,2025-07-04,Term 3,T005,Independent task,Volunteered an answer and explained thinking to peers.,Phone callback,Self-regulation,Verified by multiple teachers
+OBS202,L047,2026-03-13,Term 1,T002,Reading session,"Struggled to start, then improved after a short teacher check-in.",Voice transcription,Peer support,Inconclusive
+OBS203,L047,2026-03-22,Term 1,T003,Reading session,Stayed engaged in the task but was hesitant to speak in front of the class.,Phone callback,Reading comprehension,Needs more evidence
+OBS204,L047,2025-02-01,Term 1,T002,Math task,Helped the group organize the task without being told.,Text note,Peer support,Repeated pattern
+OBS205,L047,2026-01-28,Term 1,T005,Group project,Asked a clarifying question before starting and worked independently.,Phone callback,Peer support,Verified by multiple teachers
+OBS206,L048,2026-08-11,Term 3,T002,Practical activity,Kept re-engaging after distraction and eventually finished the task.,Phone callback,Following instructions,Pending
+OBS207,L048,2025-01-27,Term 1,T002,Pair work,Worked well with a partner and encouraged another learner to continue.,Voice transcription,Self-regulation,Repeated pattern
+OBS208,L048,2026-04-02,Term 2,T002,Practical activity,Completed the task quickly but needed support to explain the reasoning.,Teacher chat,Following instructions,Pending
+OBS209,L049,2025-03-17,Term 1,T004,Whole-class discussion,"Struggled to start, then improved after a short teacher check-in.",Phone callback,Peer support,Pending
+OBS210,L049,2026-07-18,Term 3,T005,Independent task,Completed the task quickly but needed support to explain the reasoning.,Text note,Peer support,Inconclusive
+OBS211,L049,2025-08-18,Term 3,T001,Whole-class discussion,Stayed engaged in the task but was hesitant to speak in front of the class.,Voice transcription,Peer support,Inconclusive
+OBS212,L049,2026-08-10,Term 3,T003,Pair work,Asked a clarifying question before starting and worked independently.,Voice transcription,Independent problem solving,Repeated pattern
+OBS213,L050,2026-05-06,Term 2,T005,Pair work,Worked well with a partner and encouraged another learner to continue.,Voice transcription,Confidence in class discussion,Repeated pattern
+OBS214,L050,2025-03-17,Term 1,T004,Pair work,Needed repeated reminders to stay with the activity.,Text note,Persistence,Inconclusive
+OBS215,L050,2025-02-26,Term 1,T001,Practical activity,Asked a clarifying question before starting and worked independently.,Text note,Peer support,Needs more evidence
+OBS216,L050,2025-12-21,Term 4,T005,Independent task,Needed a second explanation but then completed the task correctly.,Phone callback,Confidence in class discussion,Repeated pattern
+OBS217,L050,2026-07-01,Term 3,T001,Practical activity,Asked a clarifying question before starting and worked independently.,Text note,Confidence in class discussion,Inconclusive
+OBS218,L050,2025-12-12,Term 4,T005,Group project,Volunteered an answer and explained thinking to peers.,Text note,Task completion,Verified by multiple teachers
