@@ -1,0 +1,1 @@
+// App header component with navigation, user menu, notifications

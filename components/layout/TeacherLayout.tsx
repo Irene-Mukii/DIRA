@@ -1,0 +1,1 @@
+// Main teacher layout wrapper combining header, sidebar, and content area

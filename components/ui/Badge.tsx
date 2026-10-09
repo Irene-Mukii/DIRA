@@ -1,0 +1,1 @@
+// Reusable badge component for status indicators

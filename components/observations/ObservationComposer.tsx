@@ -1,0 +1,1 @@
+// Provides a single chat-style input for typing observations or recording voice notes and submitting them.
