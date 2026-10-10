@@ -6,8 +6,9 @@ validation, and testing logic belong in separate scripts.
 
 Output files:
 - learners.csv
-- observations.cs 
+- observations.csv
 - activity_tests.csv
+- school_calendar.csv
 - optionally teacher_reviews.csv (if --include-teacher-reviews is set)
 """
 
@@ -57,6 +58,20 @@ SOURCE_TYPES = [
     "Teacher chat",
 ]
 
+YEAR_GROUPS = ["Grade 4", "Grade 5", "Grade 6"]
+PERIODS = [
+    (1, "08:45", "09:45"),
+    (2, "09:45", "10:45"),
+    (3, "11:15", "12:15"),
+    (4, "13:00", "14:00"),
+    (5, "14:00", "15:00"),
+]
+SUBJECTS_BY_YEAR_GROUP = {
+    "Grade 4": ["Mathematics", "English", "Science", "Humanities", "Arts"],
+    "Grade 5": ["Mathematics", "English", "Science", "Humanities", "Health and Physical Education"],
+    "Grade 6": ["Mathematics", "English", "Science", "Humanities", "Design and Technology"],
+}
+
 
 def generate_learners(count: int, academic_year: int) -> list[dict]:
     learners = []
@@ -89,27 +104,129 @@ def random_date(start: date, end: date) -> date:
     return start + timedelta(days=random.randint(0, delta))
 
 
-def generate_observations(learners: list[dict], teacher_ids: list[str], seed: int) -> tuple[list[dict], list[str]]:
+def term_for_date(value: date) -> str:
+    if value.month <= 3:
+        return "Term 1"
+    if value.month <= 6:
+        return "Term 2"
+    if value.month <= 9:
+        return "Term 3"
+    return "Term 4"
+
+
+def first_weekday_of_month(year: int, month: int, weekday: int) -> date:
+    value = date(year, month, 1)
+    return value + timedelta(days=(weekday - value.weekday()) % 7)
+
+
+def events_for_date(value: date) -> tuple[str, str]:
+    math_week_start = first_weekday_of_month(value.year, 5, 0)
+    reading_week_start = first_weekday_of_month(value.year, 2, 0)
+    if math_week_start <= value < math_week_start + timedelta(days=5):
+        return "Mathematics Week", "Curriculum week"
+    if reading_week_start <= value < reading_week_start + timedelta(days=5):
+        return "Reading Week", "Curriculum week"
+    if value.month == 9 and value.weekday() == 4 and 8 <= value.day <= 14:
+        return "Science Fair", "School event"
+    if value.month == 11 and value.weekday() == 4 and 15 <= value.day <= 21:
+        return "Sports Day", "School event"
+    return "", ""
+
+
+def generate_school_calendar(start_year: int, end_year: int) -> list[dict]:
+    calendar_rows: list[dict] = []
+    entry_number = 1
+
+    for year in range(start_year, end_year + 1):
+        current_date = date(year, 1, 1)
+        last_date = date(year, 12, 31)
+        while current_date <= last_date:
+            if current_date.weekday() < 5:
+                event_name, event_type = events_for_date(current_date)
+                for year_group in YEAR_GROUPS:
+                    subjects = SUBJECTS_BY_YEAR_GROUP[year_group]
+                    for period_number, start_time, end_time in PERIODS:
+                        subject = subjects[(current_date.weekday() + period_number - 1) % len(subjects)]
+                        planned_activity = ""
+                        if event_name == "Mathematics Week" and subject == "Mathematics":
+                            planned_activity = "Collaborative mathematics challenge"
+                        elif event_name == "Reading Week" and subject == "English":
+                            planned_activity = "Collaborative reading activity"
+
+                        calendar_rows.append(
+                            {
+                                "calendar_entry_id": f"CAL{entry_number:06d}",
+                                "calendar_date": current_date.isoformat(),
+                                "academic_year": year,
+                                "term": term_for_date(current_date),
+                                "year_group": year_group,
+                                "weekday": current_date.strftime("%A"),
+                                "period_number": period_number,
+                                "start_time": start_time,
+                                "end_time": end_time,
+                                "subject": subject,
+                                "planned_activity": planned_activity,
+                                "event_name": event_name,
+                                "event_type": event_type,
+                            }
+                        )
+                        entry_number += 1
+            current_date += timedelta(days=1)
+
+    return calendar_rows
+
+
+def generate_observations(
+    learners: list[dict],
+    teacher_ids: list[str],
+    calendar_rows: list[dict],
+    seed: int,
+) -> tuple[list[dict], list[str]]:
     random.seed(seed)
     observations: list[dict] = []
     observation_counter = 1
+    year_groups = {
+        year_group: [
+            row
+            for row in calendar_rows
+            if row["year_group"] == year_group
+            and date(2025, 1, 1) <= date.fromisoformat(row["calendar_date"]) <= date(2026, 9, 1)
+        ]
+        for year_group in YEAR_GROUPS
+    }
+    mathematics_week_rows = [
+        row
+        for row in calendar_rows
+        if row["event_name"] == "Mathematics Week"
+        and row["subject"] == "Mathematics"
+        and row["planned_activity"]
+    ]
 
     for learner in learners:
         learner_id = learner["learner_id"]
+        year_group = learner["grade_level"]
         num_observations = random.randint(3, 6)
 
         for _ in range(num_observations):
-            observation_date = random_date(date(2025, 1, 1), date(2026, 9, 1))
+            is_calendar_example = observation_counter == 1 and bool(mathematics_week_rows)
+            if is_calendar_example:
+                calendar_entry = mathematics_week_rows[0]
+            else:
+                calendar_entry = random.choice(year_groups[year_group])
+            observation_date = date.fromisoformat(calendar_entry["calendar_date"])
             teacher_id = random.choice(teacher_ids)
-            activity_context = random.choice([
-                "Group project",
-                "Whole-class discussion",
-                "Independent task",
-                "Pair work",
-                "Practical activity",
-                "Reading session",
-                "Math task",
-            ])
+            if is_calendar_example:
+                activity_context = "Group activity"
+            else:
+                activity_context = random.choice([
+                    "Group project",
+                    "Whole-class discussion",
+                    "Independent task",
+                    "Pair work",
+                    "Practical activity",
+                    "Reading session",
+                    "Math task",
+                ])
 
             base_templates = [
                 "Helped peers divide tasks and stayed focused on the group goal.",
@@ -122,8 +239,11 @@ def generate_observations(learners: list[dict], teacher_ids: list[str], seed: in
                 "Struggled to start, then improved after a short teacher check-in.",
             ]
 
-            original_observation = random.choice(base_templates)
-            if random.random() < 0.25:
+            if is_calendar_example:
+                original_observation = "The learner contributed several ideas during the group activity."
+            else:
+                original_observation = random.choice(base_templates)
+            if not is_calendar_example and random.random() < 0.25:
                 original_observation = random.choice([
                     "Helped the group organize the task without being told.",
                     "Needed repeated reminders to stay with the activity.",
@@ -131,20 +251,12 @@ def generate_observations(learners: list[dict], teacher_ids: list[str], seed: in
                     "Stayed engaged in the task but was hesitant to speak in front of the class.",
                 ])
 
-            if observation_date.month <= 3:
-                term = "Term 1"
-            elif observation_date.month <= 6:
-                term = "Term 2"
-            elif observation_date.month <= 9:
-                term = "Term 3"
-            else:
-                term = "Term 4"
-
             observation = {
                 "observation_id": create_observation_id(observation_counter),
                 "learner_id": learner_id,
                 "observation_date": observation_date.isoformat(),
-                "term": term,
+                "term": calendar_entry["term"],
+                "calendar_entry_id": calendar_entry["calendar_entry_id"],
                 "teacher_id": teacher_id,
                 "activity_context": activity_context,
                 "original_observation": original_observation,
@@ -266,21 +378,55 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducible results")
     parser.add_argument("--output-dir", type=str, default="data/generated", help="Directory to write generated CSV files")
     parser.add_argument("--include-teacher-reviews", action="store_true", help="Also generate teacher_reviews.csv")
+    parser.add_argument("--calendar-only", action="store_true", help="Generate only school_calendar.csv")
+    parser.add_argument("--observations-only", action="store_true", help="Regenerate observations and school_calendar.csv using learners.csv already in the output directory")
     args = parser.parse_args()
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    teacher_ids = ["T001", "T002", "T003", "T004", "T005"]
-    learners = generate_learners(args.learners, args.academic_year)
-    observations, _ = generate_observations(learners, teacher_ids, args.seed)
-    tests = generate_activity_tests(learners, observations, teacher_ids, args.seed)
-
+    calendar = generate_school_calendar(args.academic_year - 1, args.academic_year)
     write_csv(
-        output_dir / "learners.csv",
-        ["learner_id", "grade_level", "academic_year", "enrolment_status"],
-        learners,
+        output_dir / "school_calendar.csv",
+        [
+            "calendar_entry_id",
+            "calendar_date",
+            "academic_year",
+            "term",
+            "year_group",
+            "weekday",
+            "period_number",
+            "start_time",
+            "end_time",
+            "subject",
+            "planned_activity",
+            "event_name",
+            "event_type",
+        ],
+        calendar,
     )
+
+    if args.calendar_only:
+        print(f"Generated school calendar in {output_dir}")
+        print(f"calendar_entries={len(calendar)}")
+        return
+
+    teacher_ids = ["T001", "T002", "T003", "T004", "T005"]
+    if args.observations_only:
+        learners_path = output_dir / "learners.csv"
+        with learners_path.open("r", newline="", encoding="utf-8") as csvfile:
+            learners = list(csv.DictReader(csvfile))
+    else:
+        learners = generate_learners(args.learners, args.academic_year)
+
+    observations, _ = generate_observations(learners, teacher_ids, calendar, args.seed)
+
+    if not args.observations_only:
+        write_csv(
+            output_dir / "learners.csv",
+            ["learner_id", "grade_level", "academic_year", "enrolment_status"],
+            learners,
+        )
     write_csv(
         output_dir / "observations.csv",
         [
@@ -288,6 +434,7 @@ def main() -> None:
             "learner_id",
             "observation_date",
             "term",
+            "calendar_entry_id",
             "teacher_id",
             "activity_context",
             "original_observation",
@@ -297,6 +444,13 @@ def main() -> None:
         ],
         observations,
     )
+
+    if args.observations_only:
+        print(f"Generated observations and school calendar in {output_dir}")
+        print(f"observations={len(observations)} calendar_entries={len(calendar)}")
+        return
+
+    tests = generate_activity_tests(learners, observations, teacher_ids, args.seed)
     write_csv(
         output_dir / "activity_tests.csv",
         [
@@ -332,6 +486,7 @@ def main() -> None:
 
     print(f"Generated dataset in {output_dir}")
     print(f"learners={len(learners)} observations={len(observations)} tests={len(tests)}")
+    print(f"calendar_entries={len(calendar)}")
 
 
 if __name__ == "__main__":

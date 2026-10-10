@@ -88,7 +88,11 @@ def clean_learners(rows: list[dict]) -> list[dict]:
     return cleaned
 
 
-def clean_observations(rows: list[dict], valid_learner_ids: set[str]) -> list[dict]:
+def clean_observations(
+    rows: list[dict],
+    valid_learner_ids: set[str],
+    valid_calendar_entry_ids: set[str] | None = None,
+) -> list[dict]:
     cleaned: list[dict] = []
     seen: set[str] = set()
 
@@ -102,6 +106,9 @@ def clean_observations(rows: list[dict], valid_learner_ids: set[str]) -> list[di
         if observation_id in seen:
             continue
         seen.add(observation_id)
+        calendar_entry_id = (row.get("calendar_entry_id") or "").strip()
+        if valid_calendar_entry_ids is not None and calendar_entry_id not in valid_calendar_entry_ids:
+            calendar_entry_id = ""
 
         cleaned.append(
             {
@@ -109,6 +116,7 @@ def clean_observations(rows: list[dict], valid_learner_ids: set[str]) -> list[di
                 "learner_id": learner_id,
                 "observation_date": row.get("observation_date") or "Unknown",
                 "term": row.get("term") or "Unknown",
+                "calendar_entry_id": calendar_entry_id,
                 "teacher_id": row.get("teacher_id") or "Unknown",
                 "activity_context": row.get("activity_context") or "Unspecified",
                 "original_observation": row.get("original_observation") or "No observation text provided.",
@@ -119,6 +127,43 @@ def clean_observations(rows: list[dict], valid_learner_ids: set[str]) -> list[di
         )
 
     cleaned.sort(key=lambda item: (item["learner_id"], item["observation_id"]))
+    return cleaned
+
+
+def clean_school_calendar(rows: list[dict]) -> list[dict]:
+    cleaned: list[dict] = []
+    seen: set[str] = set()
+
+    for row in rows:
+        calendar_entry_id = (row.get("calendar_entry_id") or "").strip()
+        calendar_date = (row.get("calendar_date") or "").strip()
+        year_group = (row.get("year_group") or "").strip()
+        period_number = (row.get("period_number") or "").strip()
+        if not calendar_entry_id or not calendar_date or not year_group or not period_number:
+            continue
+        if calendar_entry_id in seen:
+            continue
+        seen.add(calendar_entry_id)
+
+        cleaned.append(
+            {
+                "calendar_entry_id": calendar_entry_id,
+                "calendar_date": calendar_date,
+                "academic_year": row.get("academic_year") or "Unknown",
+                "term": row.get("term") or "Unknown",
+                "year_group": year_group,
+                "weekday": row.get("weekday") or "Unknown",
+                "period_number": period_number,
+                "start_time": row.get("start_time") or "Unknown",
+                "end_time": row.get("end_time") or "Unknown",
+                "subject": row.get("subject") or "Unspecified",
+                "planned_activity": row.get("planned_activity") or "",
+                "event_name": row.get("event_name") or "",
+                "event_type": row.get("event_type") or "",
+            }
+        )
+
+    cleaned.sort(key=lambda item: (item["calendar_date"], item["year_group"], item["period_number"]))
     return cleaned
 
 
@@ -221,7 +266,14 @@ def main() -> None:
 
     learners = clean_learners(read_csv_rows(input_dir / "learners.csv"))
     valid_learner_ids = {row["learner_id"] for row in learners}
-    observations = clean_observations(read_csv_rows(input_dir / "observations.csv"), valid_learner_ids)
+    calendar_path = input_dir / "school_calendar.csv"
+    school_calendar = clean_school_calendar(read_csv_rows(calendar_path)) if calendar_path.exists() else []
+    valid_calendar_entry_ids = {row["calendar_entry_id"] for row in school_calendar}
+    observations = clean_observations(
+        read_csv_rows(input_dir / "observations.csv"),
+        valid_learner_ids,
+        valid_calendar_entry_ids if calendar_path.exists() else None,
+    )
     valid_observation_ids = {row["observation_id"] for row in observations}
     tests = clean_activity_tests(read_csv_rows(input_dir / "activity_tests.csv"), valid_learner_ids, valid_observation_ids)
 
@@ -237,6 +289,7 @@ def main() -> None:
             "learner_id",
             "observation_date",
             "term",
+            "calendar_entry_id",
             "teacher_id",
             "activity_context",
             "original_observation",
@@ -246,6 +299,26 @@ def main() -> None:
         ],
         observations,
     )
+    if calendar_path.exists():
+        write_csv_rows(
+            output_dir / "school_calendar.csv",
+            [
+                "calendar_entry_id",
+                "calendar_date",
+                "academic_year",
+                "term",
+                "year_group",
+                "weekday",
+                "period_number",
+                "start_time",
+                "end_time",
+                "subject",
+                "planned_activity",
+                "event_name",
+                "event_type",
+            ],
+            school_calendar,
+        )
     write_csv_rows(
         output_dir / "activity_tests.csv",
         [
@@ -281,7 +354,7 @@ def main() -> None:
 
     print(f"Input directory: {input_dir}")
     print(f"Output directory: {output_dir}")
-    print(f"learners={len(learners)} observations={len(observations)} tests={len(tests)}")
+    print(f"learners={len(learners)} observations={len(observations)} tests={len(tests)} calendar_entries={len(school_calendar)}")
 
 
 if __name__ == "__main__":
