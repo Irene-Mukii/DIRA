@@ -45,6 +45,26 @@ Never write “pass” because a feature exists in code or a manual demo looked 
 | EVAL-24 | Outbound phone callback | Correct provider flow, verified teacher identity, transcript and same observation schema; otherwise mark blocked | P1 | Not run |
 | EVAL-25 | Weekly rotation | Chooses least-recently-observed learners based on records, not random list | P1 | Not run |
 | EVAL-26 | Open-weight model requirement (confirmation needed) | Only mark pass if the final challenge rubric requires it and a selected open-weight model demonstrably executes a real task; revised architecture does not yet specify one | Confirm with team | Not run |
+| EVAL-27 | Teacher follow-up status ownership and truthful wording | Only the server-resolved teacher's jobs and pending reviews appear; provider acceptance is never presented as an answered/completed call | P1 | Not run |
+| EVAL-28 | Follow-up lifecycle failure and callback gaps | Rejection/unknown states show safe next steps; missed/declined/completed are not claimed until authenticated callbacks exist | P1 | Not run |
+| EVAL-29 | Production authentication boundary | Follow-up activity is unavailable without a real authenticated teacher session; configured demo IDs cannot be treated as production identity | P0 | Not run |
+
+### EVAL-27/28/29 — Teacher follow-up status and lifecycle truth
+
+**Arrange:** Use synthetic schedule rows for two teachers, and exercise queued,
+initiating, provider-accepted, provider-rejected, outcome-unknown, and cancelled
+follow-up jobs. Include a recorded voice observation for each teacher.
+
+**Assert:** The development follow-up activity page scopes call jobs and pending
+observations to the configured server-side demo teacher and school, not a
+client-supplied ID. Production access remains blocked until real login context is
+implemented. Each state has a
+plain-language explanation and safe next step. `provider_accepted` is described only
+as provider request acceptance; it is never shown as answered or completed.
+Rejected/unknown calls do not imply an automatic retry. Production requests without
+a verified teacher session do not return teacher data. Until provider callback
+authentication and lifecycle processing are verified, missed/declined/answered/
+completed/recording outcomes remain explicitly unavailable.
 
 ## 4. Detailed core cases
 

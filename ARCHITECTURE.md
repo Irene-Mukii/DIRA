@@ -35,7 +35,7 @@ Dira supports teachers in collecting and reviewing evidence about learners over 
 | Database | PostgreSQL | System of record for learners, observations, questions/tests, outcomes, and evidence summaries/references | Dira data store; schema/client files are present in the planned structure |
 | Speech-to-text | Whissle | Transcribe audio from in-app voice notes or captured telephone audio | External API; confirm account, endpoint, audio format, and limits |
 | SMS | Africa's Talking SMS API | Send short teacher reminders and weekly focus messages | External API; selected provider |
-| Outbound voice | Africa's Talking Voice API | Initiate a scheduled teacher follow-up; audio capture is a later phase | Server-side request adapter and demo-gated due dispatcher implemented; credentials, callbacks, contact consent, and live calls remain unverified |
+| Outbound voice | Africa's Talking Voice API | Initiate a scheduled teacher follow-up; audio capture is a later phase | Server-side request adapter, demo-gated due dispatcher, and teacher-scoped development status page implemented; credentials, callbacks, teacher authentication/consent, and live calls remain unverified |
 | Calendar MCP server (borrowed) | Keeper.sh MCP server — repository: https://github.com/ridafkih/keeper.sh; hosted MCP endpoint: `https://www.keeper.sh/mcp` | Give Dira one MCP interface for connected Google Calendar, Outlook/Microsoft 365, iCloud, Fastmail, CalDAV, and read-only ICS/iCal feeds | Selected; client transport and bounded read-only adapter implemented, but OAuth authorization and an authenticated tool call remain unverified |
 | Calendar provider access | Calendar accounts connected through Keeper.sh | Supply lesson schedule and timing context for follow-up workflows | External calendar providers; Dira should call the borrowed server through MCP rather than label a direct provider API adapter as an MCP server |
 | Educational-source retrieval | External retrieval/search adapter to approved sources (e.g. IBEF, AMI, WWC) | Quickly retrieve relevant educational guidance when generating a suggested classroom test | Required agent behaviour; exact provider/adapter must be selected and verified. No persistent source catalogue table in PostgreSQL for the MVP |
@@ -126,6 +126,7 @@ flowchart TD
 9. **Record the outcome.** After trying the activity, the teacher records what happened. Link the outcome to the test where applicable; do not infer an outcome from a calendar event.
 10. **Build the Learner Evidence Card.** The evidence-summary capability assembles questions explored, tests conducted, and observed outcomes from underlying records. Every factual claim is checked against source evidence.
 11. **Teacher reviews the card.** The card supports professional judgement; it is not a verdict, diagnosis, learner ranking, or pathway assignment.
+12. **Review follow-up activity.** `/follow-up-calls` shows the configured development teacher's own queue/provider-submission statuses and recorded observations awaiting review. Provider acceptance is not presented as an answered call. This page is unavailable in production until authenticated teacher sessions are implemented.
 
 ### MVP exclusions
 
@@ -143,6 +144,7 @@ flowchart TD
 flowchart TB
     subgraph UX["Dira frontend — built by our team"]
         TW[This Week]
+        FC[Follow-up Activity — development demo only]
         LR[Learner Record]
         LO[Chat-style Log Observation]
         TT[Try This]
@@ -186,6 +188,7 @@ flowchart TB
     end
 
     TW --> ROUTES
+    FC --> ROUTES
     LR --> ROUTES
     LO --> ROUTES
     TT --> ROUTES

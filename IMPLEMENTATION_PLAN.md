@@ -194,6 +194,29 @@ tests pass in the named environment.
   retention behavior has been verified. Therefore this phase does not yet produce
   phone transcripts or claim a working voice-to-observation end-to-end flow.
 
+## Phase 5 implementation status
+
+- **Teacher-facing demo status view implemented; production identity and call outcomes
+  remain blocked:** `/follow-up-calls` shows queue/provider-submission states and the
+  next safe action, with rows filtered server-side by the configured development
+  teacher and school. It also lists that teacher's `recorded` observations separately
+  and links to their learner records for review.
+- The view is linked from desktop and mobile navigation. It intentionally says that
+  the development teacher ID is not an authenticated login. Production renders an
+  unavailable message until a real teacher session is wired.
+- The current provider lifecycle only supports queued, initiating, provider-accepted,
+  provider-rejected, outcome-unknown, and cancelled. The UI does not claim that an
+  accepted request rang, was answered, or completed. Missed/declined/completed states
+  require authenticated provider callbacks and are not implemented.
+- A separate authorised-staff operational console is **not implemented** because
+  Dira has no staff role/authentication model. The current page exposes only the
+  configured demo teacher's operational summary and redacts unknown error codes to
+  a generic message.
+- **End-to-end verification remains blocked:** no real login, external scheduler,
+  Africa's Talking callback, recording flow, Whissle transcription, or production
+  teacher authorization is connected. These are integration blockers, not passing
+  tests.
+
 ## Should Dira write school periods to teachers' work calendars?
 
 **Recommendation: not for the call-scheduling MVP.** Dira already has recurring

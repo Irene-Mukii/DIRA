@@ -10,7 +10,7 @@
 | PostgreSQL | Durable learner, observation, test, outcome and related records | Database connection from server-side code | Core storage choice | Schema/migrations, constraints, persistence, backups/dev resets |
 | Whissle | Transcribe submitted in-app audio and, if implemented, phone-captured audio | Ordinary speech-to-text API unless a separate MCP server is truly used | Selected provider; account/endpoint/audio details to confirm | Supported format, maximum duration/size, confidence metadata if provided, timeout and error behaviour |
 | Africa's Talking SMS | Weekly focus reminders/notifications | Ordinary API unless a separate MCP server is truly used | Selected provider | Credentials, sender/short-code requirements, delivery status/callbacks, Kenya account permissions |
-| Africa's Talking Voice | Outbound teacher follow-up call | Ordinary server-side voice API; not MCP | Request adapter and non-production demo-gated dispatcher implemented; no live call verified | Account credentials, caller ID, sandbox/live behavior, provider callbacks/status authentication, recording/audio retrieval, account restrictions and teacher consent |
+| Africa's Talking Voice | Outbound teacher follow-up call | Ordinary server-side voice API; not MCP | Request adapter, non-production demo-gated dispatcher, and teacher-scoped development status view implemented; no live call verified | Account credentials, caller ID, sandbox/live behavior, provider callbacks/status authentication, recording/audio retrieval, account restrictions and teacher consent |
 | Keeper.sh calendar MCP | Unified calendar context for follow-up | **Borrowed external MCP server** | Selected/planned; not complete until actual call succeeds | OAuth 2.1 flow for hosted endpoint, Streamable HTTP transport, MCP discovery/invocation, limits and returned event data |
 | Educational-source retrieval | Fast relevant lookup before every test suggestion | Separate retrieval/search adapter; not automatically MCP | Required behaviour; exact provider/adapter remains to be selected and tested | Source coverage, citations, timeout, cancellation, empty results, query privacy, reliability |
 | Google Cloud Run | Intended app deployment target from the shared plan | Hosting/platform service | Target in shared planning document; confirm actual deploy | Clean clone/build/start, environment secrets, health/readiness, smoke test |
@@ -105,6 +105,14 @@ endpoint submits at most one due call per invocation; do not schedule it until t
 Phase 3 migration and a controlled, manually observed test are complete. The voice
 callback route returns only the fixed teacher greeting. It does not record audio,
 transcribe, or save observations.
+
+The `/follow-up-calls` page shows the configured development teacher's own queued and
+provider-submission records plus observations awaiting teacher review. It deliberately
+distinguishes `provider_accepted` from ringing, answering, or completion, and does not
+render unverified provider callback states. The page is not protected by a production
+login because teacher authentication is not implemented; it is unavailable in production.
+An authorised-staff operations console is deferred until the application has an
+authenticated staff role.
 
 Caller ID alone is not proof of teacher identity. Authenticate the teacher through an approved challenge/context before associating a transcript with a learner. The voice call initiates/captures audio; Whissle transcribes it; Dira validates and persists it through `log_observation`.
 

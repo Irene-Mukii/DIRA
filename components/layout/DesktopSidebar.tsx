@@ -3,6 +3,7 @@ import Link from "next/link";
 
 const navigation = [
   { name: "This Week", href: "/this-week", current: false },
+  { name: "Follow-up Activity", href: "/follow-up-calls", current: false },
   { name: "Learners", href: "/learners", current: false },
   { name: "Try This", href: "/try-this/demo", current: false },
   { name: "Evidence", href: "/evidence/demo", current: false },
