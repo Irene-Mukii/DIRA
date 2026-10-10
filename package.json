@@ -10,6 +10,7 @@
     "db:seed:dev": "node scripts/seed-development.cjs --confirm-development"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.1",
     "next": "^16.4.0",
     "pg": "^8.23.1",
     "react": "^19.3.0",

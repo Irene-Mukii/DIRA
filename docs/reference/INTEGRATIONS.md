@@ -21,7 +21,7 @@
 **MCP documentation:** <https://www.keeper.sh/docs/mcp>  
 **Hosted MCP endpoint stated in the revised architecture:** `https://www.keeper.sh/mcp`
 
-Keeper.sh is selected to provide calendar functionality through an existing third-party MCP server. The revised architecture lists support for connected Google Calendar, Outlook/Microsoft 365, iCloud, Fastmail, CalDAV, and read-only ICS/iCal feeds. The documents do not establish a native Calendly integration; do not claim direct Calendly support. Supported providers and functionality must be checked against current Keeper documentation during setup.
+Keeper.sh is selected to provide calendar functionality through an existing third-party MCP server. Its current repository README documents Google Calendar, Outlook, iCloud, Fastmail, CalDAV, and pull-only iCal/ICS feeds. The documents do not establish a native Calendly integration; do not claim direct Calendly support. Supported providers and functionality must be checked against current Keeper documentation during setup.
 
 ### Why reuse it?
 
@@ -33,15 +33,15 @@ Keeper.sh is selected to provide calendar functionality through an existing thir
 ### Integration steps
 
 1. Read the current Keeper documentation and confirm the server endpoint, available tools, authentication, and terms for hosted versus self-hosted use.
-2. Confirm that `lib/agent/mcp-client.ts` can support the required Streamable HTTP transport and hosted OAuth 2.1 consent flow. Do not assume the current client already supports these.
+2. Dira now uses the official `@modelcontextprotocol/sdk` client with Streamable HTTP transport in `lib/agent/mcp-client.ts`. The connection requires an `OAuthClientProvider`; OAuth tokens and per-teacher authorization are not yet implemented or persisted by Dira.
 3. Connect a non-sensitive test calendar account.
-4. Use the MCP protocol to discover tools and call a read-oriented operation such as `list_calendars` or `get_events` only if that tool actually exists in the current server schema.
-5. Request a minimal date-bounded set of events and inspect the returned data.
+4. Discover tools from the live MCP server. Keeper's current repository README lists read-oriented tools including `list_calendars`, `get_event_count`, `get_events`, `get_event`, and `find_free_time`, plus event-write and sync tools. Treat live discovery—not this documentation—as authoritative.
+5. Use the read-only adapter in `lib/external-mcp/calendar.ts` for a bounded event count or date-limited event read. It enforces the discovered read-only annotation and schema inputs; the current event-read adapter limits ranges to 24 hours. Do not invoke write or sync tools in the MVP call-scheduling phases.
 6. Pass only necessary schedule context into Dira. Do not ingest full calendar content into learner evidence.
 7. Add a test log showing date, tool discovered, call completed, safe result shape and any limitation. Remove tokens and personal calendar details from logs.
-8. Verify rate limits before demo. The revised architecture notes a hosted free-plan limit of 25 combined API/MCP requests per day; this may change and should be rechecked. If insufficient, explicitly decide whether self-hosting is feasible rather than silently bypassing MCP.
+8. The Keeper repository currently documents hosted OAuth 2.1 and a free-plan cap of 25 combined API/MCP requests per day. Recheck the hosted terms and limits before demo. If insufficient, explicitly decide whether self-hosting is feasible rather than silently bypassing MCP.
 
-**Requirement boundary:** the borrowed-MCP requirement is not met by adding a Keeper URL to the docs. It is met by an actual Dira MCP-client connection and a real tool invocation. Until then, call this integration “selected/planned.”
+**Current status:** the SDK transport, endpoint configuration, tool discovery, and guarded read-only adapter are implemented. A live authenticated Keeper call is **blocked/unverified** until a non-sensitive test calendar is authorized through OAuth and Dira has a secure provider for that OAuth session. The borrowed-MCP requirement is not met by adding a Keeper URL to the docs; it is met by an actual Dira-client connection and real tool invocation.
 
 ### Correct use in Dira
 

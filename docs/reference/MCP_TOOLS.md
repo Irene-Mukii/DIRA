@@ -6,7 +6,7 @@
 
 Dira has a Dira-owned MCP server/tool surface for learner evidence operations and a client that connects the agent to tools. The team's server is planned within the TypeScript/Next.js repository. A Next.js route handler named `app/api/mcp/.../route.ts` is not automatically a standards-compliant MCP server: verify protocol/transport, discovery and invocation with an MCP client/Inspector.
 
-Dira must also use a borrowed server to satisfy the external-MCP requirement. **Keeper.sh** is the selected third-party calendar MCP server. The Dira MCP client must connect to and invoke Keeper through MCP, rather than using a direct Google Calendar REST integration and calling that MCP usage.
+Dira must also use a borrowed server to satisfy the external-MCP requirement. **Keeper.sh** is the selected third-party calendar MCP server. `lib/agent/mcp-client.ts` now uses the official MCP SDK with Streamable HTTP transport and requires a caller-supplied OAuth client provider. `lib/external-mcp/calendar.ts` discovers tools and only invokes discovered tools marked read-only for its bounded count/event helpers. OAuth callback handling, secure token persistence, teacher-to-calendar authorization, and a live authenticated tool invocation are not yet implemented. Do not treat the client foundation as end-to-end verification.
 
 ## 2. Tool inventory
 

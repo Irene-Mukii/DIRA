@@ -28,7 +28,7 @@ Dira supports teachers in collecting and reviewing evidence about learners over 
 | Model | GLM-5.3 through a hosted API | Reason over relevant context and propose appropriate next actions | External hosted model; provider and API configuration must be confirmed |
 | Model abstraction | `lib/models.ts` | Keep provider/model configuration replaceable and server-side | Dira code |
 | Agent orchestration | `lib/agent/orchestrator.ts` | Decide which agent action to run and coordinate the workflow | Dira code |
-| MCP client | `lib/agent/mcp-client.ts` | Discover/invoke tools, validate tool arguments, handle errors/timeouts, and trace calls | Dira code |
+| MCP client | `lib/agent/mcp-client.ts` | Streamable HTTP transport through the official MCP SDK, OAuth-provider injection, tool discovery/invocation, request timeouts, and error propagation | Client foundation implemented; secure OAuth session/token persistence and live Keeper verification remain |
 | Dira MCP tool: observation | `lib/mcp-tools/logObservation.ts` | Validate and persist a teacher observation through the approved tool workflow | Dira-owned tool |
 | Dira MCP tool: test suggestion | `lib/mcp-tools/suggestTest.ts` | Propose a small, practical classroom test grounded in learner evidence | Dira-owned tool |
 | Evidence summary | `lib/mcp-tools/draftPathwayNote.ts` (existing filename) | Build the evidence-grounded content used by the Learner Evidence Card; must not assign a pathway or produce a learner verdict | Dira-owned capability; filename is legacy and can be renamed later |
@@ -36,7 +36,7 @@ Dira supports teachers in collecting and reviewing evidence about learners over 
 | Speech-to-text | Whissle | Transcribe audio from in-app voice notes or captured telephone audio | External API; confirm account, endpoint, audio format, and limits |
 | SMS | Africa's Talking SMS API | Send short teacher reminders and weekly focus messages | External API; selected provider |
 | Outbound voice | Africa's Talking Voice API | Initiate calls to teachers to capture an observation by phone | External API; selected provider; verify caller ID, outbound-call, recording/IVR, callback, and Kenya account requirements |
-| Calendar MCP server (borrowed) | Keeper.sh MCP server — repository: https://github.com/ridafkih/keeper.sh; hosted MCP endpoint: `https://www.keeper.sh/mcp` | Give Dira one MCP interface for connected Google Calendar, Outlook/Microsoft 365, iCloud, Fastmail, CalDAV, and read-only ICS/iCal feeds | Existing third-party open-source MCP server under AGPL-3.0; selected for Dira, pending authentication, tool-call, and end-to-end verification |
+| Calendar MCP server (borrowed) | Keeper.sh MCP server — repository: https://github.com/ridafkih/keeper.sh; hosted MCP endpoint: `https://www.keeper.sh/mcp` | Give Dira one MCP interface for connected Google Calendar, Outlook/Microsoft 365, iCloud, Fastmail, CalDAV, and read-only ICS/iCal feeds | Selected; client transport and bounded read-only adapter implemented, but OAuth authorization and an authenticated tool call remain unverified |
 | Calendar provider access | Calendar accounts connected through Keeper.sh | Supply lesson schedule and timing context for follow-up workflows | External calendar providers; Dira should call the borrowed server through MCP rather than label a direct provider API adapter as an MCP server |
 | Educational-source retrieval | External retrieval/search adapter to approved sources (e.g. IBEF, AMI, WWC) | Quickly retrieve relevant educational guidance when generating a suggested classroom test | Required agent behaviour; exact provider/adapter must be selected and verified. No persistent source catalogue table in PostgreSQL for the MVP |
 | Logging | `lib/agent/logger.ts` and `agent_activity_logs` concept | Trace runs, tool calls, status, latency, model, and errors | Dira code/data design; do not log private chain-of-thought |
@@ -47,11 +47,11 @@ Dira supports teachers in collecting and reviewing evidence about learners over 
 ### Keeper.sh integration decision and verification checklist
 
 1. Use Keeper.sh as the borrowed external calendar MCP server; do not replace this with a direct Google Calendar REST integration and call it MCP.
-2. Start with the hosted MCP endpoint documented by Keeper (`https://www.keeper.sh/mcp`) and confirm that Dira’s MCP client supports streamable HTTP plus the hosted OAuth 2.1 consent flow.
+2. Start with the hosted MCP endpoint documented by Keeper (`https://www.keeper.sh/mcp`). Dira's client now supports Streamable HTTP and accepts an OAuth provider; implement secure per-user OAuth callback and token persistence before claiming hosted authentication support.
 3. Connect a test calendar account through Keeper.sh and request a small, date-bounded set of events using an actual MCP tool such as `list_calendars` or `get_events`.
 4. Pass only the minimum schedule context needed by Dira. Calendar data is timing context, never evidence that a lesson or learner activity occurred.
 5. Handle authentication failure, unavailable calendars, rate limits, and request timeouts. Keeper’s hosted free plan documents a combined 25 API/MCP requests per day; check current plan limits before the demo.
-6. Record the external server’s repository and the successful MCP call in the demo/evaluation notes. Until this test passes, describe Keeper as **selected/planned**, not as a completed integration.
+6. Record the external server's repository and the successful MCP call in the demo/evaluation notes. Until this test passes, describe Keeper as **selected with client foundation implemented**, not as a completed integration.
 
 ### What is ours and what is borrowed?
 
