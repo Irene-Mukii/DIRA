@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { connection } from "next/server";
-import Card from "@/components/ui/Card";
 import ObservationChat from "@/components/observations/ObservationChat";
 import { pool } from "@/lib/db/client";
 import { resolveTeacherContext } from "@/lib/auth/teacher-context";
@@ -15,16 +14,42 @@ interface LearnerForObservation {
 
 function unavailable(message: string, learnerId: string) {
   return (
-    <Card className="m-4 p-6">
-      <h1 className="text-xl font-semibold">Observation log unavailable</h1>
-      <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">{message}</p>
-      <Link
-        href={`/learners/${encodeURIComponent(learnerId)}`}
-        className="mt-4 inline-flex text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400"
-      >
-        Back to learner record
-      </Link>
-    </Card>
+    <div className="flex h-full flex-col px-4 md:px-6">
+      <div className="rounded-t-2xl border-b border-gray-200 bg-white px-4 py-4 dark:border-gray-700 dark:bg-gray-800 md:px-6">
+        <Link
+          href={`/learners/${encodeURIComponent(learnerId)}`}
+          className="mb-3 inline-flex text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400"
+        >
+          ← Back to Learner Record
+        </Link>
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-600 font-semibold text-white">
+              {learnerId.slice(0, 1).toUpperCase()}
+            </div>
+            <div>
+              <h1 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                Learner {learnerId}
+              </h1>
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                Observation timeline
+              </p>
+            </div>
+          </div>
+          <Link
+            href={`/learners/${encodeURIComponent(learnerId)}`}
+            className="text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400"
+          >
+            View full profile
+          </Link>
+        </div>
+      </div>
+      <div className="rounded-b-2xl bg-white dark:bg-gray-900 flex-1 overflow-hidden p-4">
+        <div className="h-full flex items-center justify-center text-gray-500 dark:text-gray-400">
+          <p>{message}</p>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -85,7 +110,8 @@ export default async function LogObservationPage({
 
     return (
       <div className="flex h-full flex-col px-4 md:px-6">
-        <div className="border-b border-gray-200 bg-white py-4 dark:border-gray-700 dark:bg-gray-800">
+        {/* Learner Header - rounded top corners, square bottom */}
+        <header className="rounded-t-2xl border-b border-gray-200 bg-white px-4 py-4 dark:border-gray-700 dark:bg-gray-800 md:px-6 flex-shrink-0">
           <Link
             href={`/learners/${encodeURIComponent(learner.learner_id)}`}
             className="mb-3 inline-flex text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400"
@@ -113,10 +139,12 @@ export default async function LogObservationPage({
               View full profile
             </Link>
           </div>
-        </div>
-        <div className="min-h-0 flex-1 overflow-hidden">
+        </header>
+
+        {/* Conversation Workspace - square top corners, rounded bottom corners */}
+        <main className="rounded-b-2xl bg-white dark:bg-gray-900 flex-1 overflow-hidden min-h-0">
           <ObservationChat learnerId={learner.learner_id} />
-        </div>
+        </main>
       </div>
     );
   } catch (error) {

@@ -1,6 +1,6 @@
 import "server-only";
 
-export const DIRA_AGENT_MODEL = "glm-5.3";
+export const DIRA_AGENT_MODEL = "glm-5.3-flash";
 
 export interface AgentFunctionTool {
   name: string;
