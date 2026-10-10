@@ -54,6 +54,21 @@ run `npm run db:seed:dev -- --check-only`.
 npm run dev
 ```
 
+### Run follow-up queue and dispatch integration checks
+
+```powershell
+npm run test:follow-ups
+```
+
+These tests use the local Docker development database only (`dira_dev`, user
+`dira_dev`, port `5433`). Set `DIRA_TEST_DATABASE_URL` in `.env.local` to that
+development database URL before running them; the test runner refuses any other
+database target and never falls back to the application's `DATABASE_URL`. They
+create uniquely named temporary schedule rows and remove them afterward. The test
+dispatch mocks Africa's Talking, so it cannot place a real call. Run them
+separately from `npm run build`; a test failure does not change or block the
+production build.
+
 In development, Dira uses the oldest recorded teacher (ties are resolved by
 teacher ID) as a single demo identity. It does not trust a teacher ID from a
 browser or model. Set `DIRA_DEMO_MODE=true` only for an isolated demo database;

@@ -17,7 +17,17 @@ export interface ScheduledAgentResult {
   model: string;
   status: "completed" | "partial" | "failed";
   summary: string;
-  tool_calls: Array<{ name: string; succeeded: boolean }>;
+  tool_calls: Array<{
+    name: string;
+    succeeded: boolean;
+    error?: {
+      code: string;
+      message: string;
+      stage?: string;
+      diagnostic_id?: string;
+      database_code?: string;
+    };
+  }>;
 }
 
 const MAX_MODEL_TURNS = 4;
@@ -85,6 +95,49 @@ function resultText(result: unknown): string {
     .map((item) => item.text)
     .join("\n");
   return text || JSON.stringify(result);
+}
+
+function readToolError(
+  result: unknown,
+): ScheduledAgentResult["tool_calls"][number]["error"] | null {
+  if (!isRecord(result)) {
+    return null;
+  }
+
+  const structured = isRecord(result.structuredContent)
+    ? result.structuredContent
+    : null;
+  if (result.isError !== true && !structured?.error) {
+    return null;
+  }
+
+  const text = resultText(result);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    parsed = null;
+  }
+  const details =
+    isRecord(parsed) ? parsed : structured ?? Object.create(null);
+  const code =
+    typeof details.error === "string" ? details.error : "mcp_tool_failed";
+  const message =
+    typeof details.message === "string"
+      ? details.message
+      : "The Dira MCP tool reported a failure.";
+
+  return {
+    code,
+    message: message.slice(0, 500),
+    ...(typeof details.stage === "string" ? { stage: details.stage } : {}),
+    ...(typeof details.diagnostic_id === "string"
+      ? { diagnostic_id: details.diagnostic_id }
+      : {}),
+    ...(typeof details.database_code === "string"
+      ? { database_code: details.database_code }
+      : {}),
+  };
 }
 
 function sanitizeSummary(value: string | null): string {
@@ -199,14 +252,22 @@ export async function runScheduledAgent(
             parseToolArguments(call.arguments),
           );
           toolOutput = resultText(output);
-          toolCalls.push({ name: call.name, succeeded: true });
+          const toolError = readToolError(output);
+          toolCalls.push({
+            name: call.name,
+            succeeded: toolError === null,
+            ...(toolError ? { error: toolError } : {}),
+          });
+          if (toolError) {
+            failureCount += 1;
+          }
 
-          if (call.name === "prepare_daily_follow_up_queue") {
+          if (!toolError && call.name === "prepare_daily_follow_up_queue") {
             completedRequiredAction = true;
-          } else if (call.name === "list_due_follow_ups") {
+          } else if (!toolError && call.name === "list_due_follow_ups") {
             dueCount = readDueCount(output);
             completedRequiredAction = true;
-          } else if (call.name === "dispatch_one_due_follow_up") {
+          } else if (!toolError && call.name === "dispatch_one_due_follow_up") {
             completedRequiredAction = true;
           }
         } catch {
