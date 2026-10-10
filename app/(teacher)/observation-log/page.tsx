@@ -17,8 +17,8 @@ export default function ObservationLogPage() {
   };
 
   return (
-    <div className="h-full flex flex-col px-4 md:px-6">
-      <div className="py-4 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+    <div className="h-full flex flex-col">
+      <div className="px-4 md:px-6 py-4 bg-white dark:bg-gray-800">
         <Link
           href="/learners"
           className="inline-flex items-center text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 mb-3"
@@ -45,9 +45,7 @@ export default function ObservationLogPage() {
           </Link>
         </div>
       </div>
-      <div className="flex-1 overflow-hidden min-h-0">
-        <ObservationChat learnerId={learnerId} learnerName={learner.name} />
-      </div>
+      <ObservationChat learnerId={learnerId} learnerName={learner.name} className="flex-1 min-h-0" />
     </div>
   );
 }

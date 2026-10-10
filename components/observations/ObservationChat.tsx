@@ -9,9 +9,10 @@ import { TranscriptionHandler } from "@/lib/agent/transcription-handler";
 interface ObservationChatProps {
   learnerId: string;
   learnerName?: string;
+  className?: string;
 }
 
-export default function ObservationChat({ learnerId, learnerName = "Learner" }: ObservationChatProps) {
+export default function ObservationChat({ learnerId, learnerName = "Learner", className }: ObservationChatProps) {
   const [messages, setMessages] = useState<Message[]>([
     {
       id: "1",
@@ -94,7 +95,7 @@ export default function ObservationChat({ learnerId, learnerName = "Learner" }: 
   };
 
   return (
-    <div className="flex flex-col h-full bg-white dark:bg-gray-800 overflow-hidden">
+    <div className={`flex flex-col flex-1 min-h-0 bg-white dark:bg-gray-800 rounded-b-2xl overflow-hidden px-4 md:px-6 ${className ?? ""}`}>
       <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0">
         {messages.map((message) => (
           <ObservationMessage key={message.id} message={message} />
