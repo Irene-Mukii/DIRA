@@ -1,3 +1,5 @@
+-- RETIRED: This schema conflicts with lib/db/dataset_schema.sql.
+-- Preserve for historical reference only; do not apply to a database.
 
 CREATE TABLE IF NOT EXISTS learners (
     learner_id TEXT PRIMARY KEY,
@@ -57,4 +59,3 @@ CREATE INDEX IF NOT EXISTS idx_observations_learner_observed
 
 CREATE INDEX IF NOT EXISTS idx_observations_learner_created
     ON observations (learner_id, created_at DESC);
-

@@ -224,6 +224,54 @@ flowchart TB
 - Every external integration must handle timeouts, provider errors, retries, status callbacks, and idempotency as applicable.
 - The diagram describes intended connections. Verify exact runtime wiring and provider capabilities during implementation.
 
+### PostgreSQL data model and table relationships
+
+This entity-relationship diagram reflects the canonical fresh-development schema in
+`lib/db/dataset_schema.sql`. A scheduled calendar row describes a class period;
+attendance records a learner's status at that period; an observation records
+teacher evidence and may optionally refer to the period. A missing attendance
+row is not itself an absence.
+
+```mermaid
+erDiagram
+    schools ||--o{ teachers : has
+    schools ||--o{ classes : contains
+    schools ||--o{ learner_enrollments : scopes
+    learners ||--o{ learner_enrollments : enrolls
+    classes ||--o{ learner_enrollments : groups
+
+    classes ||--o{ timetable_assignments : schedules
+    teachers ||--o{ timetable_assignments : teaches
+    timetable_assignments ||--o{ school_calendar : dates_as
+    classes ||--o{ school_calendar : has_periods
+    teachers ||--o{ school_calendar : assigned_to
+
+    learner_enrollments ||--o{ attendance : has_marks
+    school_calendar ||--o{ attendance : records_for
+    teachers o|--o{ attendance : records
+
+    learner_enrollments ||--o{ observations : has_evidence
+    teachers ||--o{ observations : records
+    school_calendar o|--o{ observations : contextualizes
+    learners ||--o{ activity_tests : has_tests
+    teachers ||--o{ activity_tests : conducts
+    observations o|--o{ activity_tests : supplies_outcome
+    activity_tests ||--o{ activity_test_observations : cites
+    observations ||--o{ activity_test_observations : supports
+
+    learners ||--o{ teacher_reviews : reviewed_in
+    teachers ||--o{ teacher_reviews : reviews
+    teacher_reviews ||--o{ teacher_review_observations : cites
+    observations ||--o{ teacher_review_observations : reviewed_evidence
+    teacher_reviews ||--o{ teacher_review_tests : cites
+    activity_tests ||--o{ teacher_review_tests : reviewed_test
+```
+
+The enrollment-to-attendance and enrollment-to-observation links are composite
+foreign keys over learner, class, and academic year. Test outcome and linked-test
+references also enforce that the observation and test belong to the same learner.
+The junction tables allow a test or review to cite multiple supporting records.
+
 ### Agent/tool responsibility boundaries
 
 | Component | Responsible for | Must not do |
