@@ -1,27 +1,48 @@
 #!/usr/bin/env python3
-"""Generate synthetic dataset for the Dira hackathon demo.
-
-This script is intentionally limited to data generation only. Cleaning,
-validation, and testing logic belong in separate scripts.
-
-Output files:
-- learners.csv
-- observations.csv
-- activity_tests.csv
-- school_calendar.csv
-- optionally teacher_reviews.csv (if --include-teacher-reviews is set)
-"""
+"""Generate reproducible synthetic school, timetable, attendance, and evidence CSVs."""
 
 from __future__ import annotations
 
 import argparse
 import csv
 import random
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 
 
-THEMES = [
+SCHOOL_ID = "SCH001"
+GRADES = ("Grade 4", "Grade 5", "Grade 6")
+PERIODS = (
+    (1, "08:45", "09:45"),
+    (2, "09:45", "10:45"),
+    (3, "11:15", "12:15"),
+    (4, "13:00", "14:00"),
+    (5, "14:00", "15:00"),
+)
+SUBJECTS = {
+    "Grade 4": ("Mathematics", "English", "Science", "Humanities", "Arts"),
+    "Grade 5": ("Mathematics", "English", "Science", "Humanities", "Health and Physical Education"),
+    "Grade 6": ("Mathematics", "English", "Science", "Humanities", "Design and Technology"),
+}
+ACTIVITIES = (
+    "Unassigned group-leadership task",
+    "Pair reading with turn-taking roles",
+    "Short collaborative puzzle challenge",
+    "Teacher-guided checklist task",
+    "Small-group problem solving without assigned leader",
+    "Role-reversal explanation task",
+)
+OBSERVATIONS = (
+    "Helped peers divide tasks and stayed focused on the group goal.",
+    "Needed a second explanation but then completed the task correctly.",
+    "Asked a clarifying question before starting and worked independently.",
+    "Was quiet at first but contributed to the discussion once prompted.",
+    "Completed the task quickly but needed support to explain the reasoning.",
+    "Kept re-engaging after distraction and eventually finished the task.",
+    "Worked well with a partner and encouraged another learner to continue.",
+    "Struggled to start, then improved after a short teacher check-in.",
+)
+THEMES = (
     "Collaboration",
     "Independent problem solving",
     "Confidence in class discussion",
@@ -32,76 +53,27 @@ THEMES = [
     "Participation",
     "Reading comprehension",
     "Task completion",
-]
-
-SUGGESTED_ACTIVITIES = [
-    "Unassigned group-leadership task",
-    "Pair reading with turn-taking roles",
-    "Short collaborative puzzle challenge",
-    "Teacher-guided checklist task",
-    "Small-group problem solving without assigned leader",
-    "Role-reversal explanation task",
-]
-
-VERIFICATION_OPTIONS = [
+)
+VERIFICATION_STATUSES = (
     "Pending",
     "Needs more evidence",
     "Repeated pattern",
     "Verified by multiple teachers",
     "Inconclusive",
-]
-
-SOURCE_TYPES = [
-    "Voice transcription",
-    "Text note",
-    "Phone callback",
-    "Teacher chat",
-]
-
-YEAR_GROUPS = ["Grade 4", "Grade 5", "Grade 6"]
-PERIODS = [
-    (1, "08:45", "09:45"),
-    (2, "09:45", "10:45"),
-    (3, "11:15", "12:15"),
-    (4, "13:00", "14:00"),
-    (5, "14:00", "15:00"),
-]
-SUBJECTS_BY_YEAR_GROUP = {
-    "Grade 4": ["Mathematics", "English", "Science", "Humanities", "Arts"],
-    "Grade 5": ["Mathematics", "English", "Science", "Humanities", "Health and Physical Education"],
-    "Grade 6": ["Mathematics", "English", "Science", "Humanities", "Design and Technology"],
+)
+SOURCES = {
+    "Voice transcription": "in_app_voice",
+    "Text note": "text",
+    "Phone callback": "basic_phone_callback",
+    "Teacher chat": "other",
 }
 
 
-def generate_learners(count: int, academic_year: int) -> list[dict]:
-    learners = []
-    grade_levels = ["Grade 4", "Grade 4", "Grade 5", "Grade 5", "Grade 6", "Grade 6"]
-    enrolment_statuses = ["Active", "Active", "At risk", "Active", "Active", "Transitioning"]
-
-    for idx in range(count):
-        learner_id = f"L{idx + 1:03d}"
-        learners.append(
-            {
-                "learner_id": learner_id,
-                "grade_level": grade_levels[idx % len(grade_levels)],
-                "academic_year": academic_year,
-                "enrolment_status": enrolment_statuses[idx % len(enrolment_statuses)],
-            }
-        )
-    return learners
-
-
-def create_observation_id(index: int) -> str:
-    return f"OBS{index:03d}"
-
-
-def create_test_id(index: int) -> str:
-    return f"TEST{index:03d}"
-
-
-def random_date(start: date, end: date) -> date:
-    delta = (end - start).days
-    return start + timedelta(days=random.randint(0, delta))
+def write_csv(path: Path, fieldnames: list[str], rows: list[dict]) -> None:
+    with path.open("w", newline="", encoding="utf-8") as output:
+        writer = csv.DictWriter(output, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
 
 
 def term_for_date(value: date) -> str:
@@ -114,17 +86,10 @@ def term_for_date(value: date) -> str:
     return "Term 4"
 
 
-def first_weekday_of_month(year: int, month: int, weekday: int) -> date:
-    value = date(year, month, 1)
-    return value + timedelta(days=(weekday - value.weekday()) % 7)
-
-
-def events_for_date(value: date) -> tuple[str, str]:
-    math_week_start = first_weekday_of_month(value.year, 5, 0)
-    reading_week_start = first_weekday_of_month(value.year, 2, 0)
-    if math_week_start <= value < math_week_start + timedelta(days=5):
+def event_for_date(value: date) -> tuple[str, str]:
+    if value.month == 5 and value.day <= 5:
         return "Mathematics Week", "Curriculum week"
-    if reading_week_start <= value < reading_week_start + timedelta(days=5):
+    if value.month == 2 and value.day <= 5:
         return "Reading Week", "Curriculum week"
     if value.month == 9 and value.weekday() == 4 and 8 <= value.day <= 14:
         return "Science Fair", "School event"
@@ -133,344 +98,527 @@ def events_for_date(value: date) -> tuple[str, str]:
     return "", ""
 
 
-def generate_school_calendar(start_year: int, end_year: int) -> list[dict]:
-    calendar_rows: list[dict] = []
-    entry_number = 1
-
-    for year in range(start_year, end_year + 1):
-        current_date = date(year, 1, 1)
-        last_date = date(year, 12, 31)
-        while current_date <= last_date:
-            if current_date.weekday() < 5:
-                event_name, event_type = events_for_date(current_date)
-                for year_group in YEAR_GROUPS:
-                    subjects = SUBJECTS_BY_YEAR_GROUP[year_group]
-                    for period_number, start_time, end_time in PERIODS:
-                        subject = subjects[(current_date.weekday() + period_number - 1) % len(subjects)]
-                        planned_activity = ""
-                        if event_name == "Mathematics Week" and subject == "Mathematics":
-                            planned_activity = "Collaborative mathematics challenge"
-                        elif event_name == "Reading Week" and subject == "English":
-                            planned_activity = "Collaborative reading activity"
-
-                        calendar_rows.append(
-                            {
-                                "calendar_entry_id": f"CAL{entry_number:06d}",
-                                "calendar_date": current_date.isoformat(),
-                                "academic_year": year,
-                                "term": term_for_date(current_date),
-                                "year_group": year_group,
-                                "weekday": current_date.strftime("%A"),
-                                "period_number": period_number,
-                                "start_time": start_time,
-                                "end_time": end_time,
-                                "subject": subject,
-                                "planned_activity": planned_activity,
-                                "event_name": event_name,
-                                "event_type": event_type,
-                            }
-                        )
-                        entry_number += 1
-            current_date += timedelta(days=1)
-
-    return calendar_rows
+def make_school() -> list[dict]:
+    return [{"school_id": SCHOOL_ID, "school_name": "DIRA Synthetic Demonstration School"}]
 
 
-def generate_observations(
-    learners: list[dict],
-    teacher_ids: list[str],
-    calendar_rows: list[dict],
-    seed: int,
-) -> tuple[list[dict], list[str]]:
-    random.seed(seed)
-    observations: list[dict] = []
-    observation_counter = 1
-    year_groups = {
-        year_group: [
-            row
-            for row in calendar_rows
-            if row["year_group"] == year_group
-            and date(2025, 1, 1) <= date.fromisoformat(row["calendar_date"]) <= date(2026, 9, 1)
-        ]
-        for year_group in YEAR_GROUPS
-    }
-    mathematics_week_rows = [
-        row
-        for row in calendar_rows
-        if row["event_name"] == "Mathematics Week"
-        and row["subject"] == "Mathematics"
-        and row["planned_activity"]
+def make_teachers() -> list[dict]:
+    return [
+        {
+            "teacher_id": f"T{number:03d}",
+            "school_id": SCHOOL_ID,
+            "display_name": f"Synthetic Teacher {number:02d}",
+        }
+        for number in range(1, 13)
     ]
 
-    for learner in learners:
-        learner_id = learner["learner_id"]
-        year_group = learner["grade_level"]
-        num_observations = random.randint(3, 6)
 
-        for _ in range(num_observations):
-            is_calendar_example = observation_counter == 1 and bool(mathematics_week_rows)
-            if is_calendar_example:
-                calendar_entry = mathematics_week_rows[0]
-            else:
-                calendar_entry = random.choice(year_groups[year_group])
-            observation_date = date.fromisoformat(calendar_entry["calendar_date"])
-            teacher_id = random.choice(teacher_ids)
-            if is_calendar_example:
-                activity_context = "Group activity"
-            else:
-                activity_context = random.choice([
-                    "Group project",
-                    "Whole-class discussion",
-                    "Independent task",
-                    "Pair work",
-                    "Practical activity",
-                    "Reading session",
-                    "Math task",
-                ])
-
-            base_templates = [
-                "Helped peers divide tasks and stayed focused on the group goal.",
-                "Needed a second explanation but then completed the task correctly.",
-                "Asked a clarifying question before starting and worked independently.",
-                "Was quiet at first but contributed to the discussion once prompted.",
-                "Completed the task quickly but needed support to explain the reasoning.",
-                "Kept re-engaging after distraction and eventually finished the task.",
-                "Worked well with a partner and encouraged another learner to continue.",
-                "Struggled to start, then improved after a short teacher check-in.",
-            ]
-
-            if is_calendar_example:
-                original_observation = "The learner contributed several ideas during the group activity."
-            else:
-                original_observation = random.choice(base_templates)
-            if not is_calendar_example and random.random() < 0.25:
-                original_observation = random.choice([
-                    "Helped the group organize the task without being told.",
-                    "Needed repeated reminders to stay with the activity.",
-                    "Volunteered an answer and explained thinking to peers.",
-                    "Stayed engaged in the task but was hesitant to speak in front of the class.",
-                ])
-
-            observation = {
-                "observation_id": create_observation_id(observation_counter),
-                "learner_id": learner_id,
-                "observation_date": observation_date.isoformat(),
-                "term": calendar_entry["term"],
-                "calendar_entry_id": calendar_entry["calendar_entry_id"],
-                "teacher_id": teacher_id,
-                "activity_context": activity_context,
-                "original_observation": original_observation,
-                "source_type": random.choice(SOURCE_TYPES),
-                "possible_theme": random.choice(THEMES),
-                "verification_status": random.choice(VERIFICATION_OPTIONS),
-            }
-            observations.append(observation)
-            observation_counter += 1
-
-    return observations, [obs["observation_id"] for obs in observations]
+def make_classes(first_year: int, last_year: int, streams_per_grade: int) -> list[dict]:
+    return [
+        {
+            "class_id": f"C{year}-{grade.replace(' ', '')}-{chr(65 + stream)}",
+            "school_id": SCHOOL_ID,
+            "grade_level": grade,
+            "stream_label": chr(65 + stream),
+            "academic_year": year,
+        }
+        for year in range(first_year, last_year + 1)
+        for grade in GRADES
+        for stream in range(streams_per_grade)
+    ]
 
 
-def generate_activity_tests(learners: list[dict], observations: list[dict], teacher_ids: list[str], seed: int) -> list[dict]:
-    random.seed(seed + 10)
-    tests: list[dict] = []
-    outcome_counter = 1
-    used_observation_ids: dict[str, list[str]] = {}
+def make_learners(count: int, streams_per_grade: int) -> tuple[list[dict], list[dict]]:
+    learners = []
+    enrollments = []
+    grade_cycle = ("Grade 4", "Grade 4", "Grade 5", "Grade 5", "Grade 6", "Grade 6")
+    statuses = ("Active", "Active", "At risk", "Active", "Active", "Transitioning")
+    for index in range(count):
+        learner_id = f"L{index + 1:03d}"
+        grade = grade_cycle[index % len(grade_cycle)]
+        stream = chr(65 + (index // len(grade_cycle)) % streams_per_grade)
+        learners.append(
+            {"learner_id": learner_id, "display_name": f"Synthetic Learner {index + 1:03d}"}
+        )
+        for year in (2025, 2026):
+            enrollments.append(
+                {
+                    "learner_id": learner_id,
+                    "class_id": f"C{year}-{grade.replace(' ', '')}-{stream}",
+                    "school_id": SCHOOL_ID,
+                    "academic_year": year,
+                    "enrolment_status": statuses[index % len(statuses)],
+                    "enrolled_from": f"{year}-01-01",
+                    "enrolled_to": f"{year}-12-31",
+                }
+            )
+    return learners, enrollments
 
-    for learner in learners:
-        learner_id = learner["learner_id"]
-        learner_obs = [obs for obs in observations if obs["learner_id"] == learner_id]
 
-        if not learner_obs:
+def make_timetable(classes: list[dict], teachers: list[dict]) -> list[dict]:
+    teacher_ids = [teacher["teacher_id"] for teacher in teachers]
+    assignments = []
+    for class_index, class_row in enumerate(classes):
+        academic_year = class_row["academic_year"]
+        for weekday in range(1, 6):
+            for period_number, start_time, end_time in PERIODS:
+                subject_list = SUBJECTS[class_row["grade_level"]]
+                subject = subject_list[(weekday + period_number - 2) % len(subject_list)]
+                teacher_index = (class_index % 6 + weekday + period_number) % len(teacher_ids)
+                assignments.append(
+                    {
+                        "timetable_assignment_id": (
+                            f"TA-{class_row['class_id']}-W{weekday}-P{period_number}"
+                        ),
+                        "school_id": class_row["school_id"],
+                        "class_id": class_row["class_id"],
+                        "teacher_id": teacher_ids[teacher_index],
+                        "academic_year": academic_year,
+                        "weekday": weekday,
+                        "period_number": period_number,
+                        "start_time": start_time,
+                        "end_time": end_time,
+                        "subject": subject,
+                        "valid_from": f"{academic_year}-01-01",
+                        "valid_to": f"{academic_year}-12-31",
+                    }
+                )
+    return assignments
+
+
+def make_school_calendar(
+    assignments: list[dict], first_year: int, last_year: int
+) -> list[dict]:
+    assignments_by_weekday: dict[tuple[int, int], list[dict]] = {}
+    for assignment in assignments:
+        key = (assignment["academic_year"], assignment["weekday"])
+        assignments_by_weekday.setdefault(key, []).append(assignment)
+
+    rows = []
+    entry_number = 1
+    current = date(first_year, 1, 1)
+    end = date(last_year, 12, 31)
+    while current <= end:
+        if current.weekday() < 5:
+            for assignment in assignments_by_weekday.get(
+                (current.year, current.isoweekday()), []
+            ):
+                event_name, event_type = event_for_date(current)
+                planned_activity = ""
+                if event_name == "Mathematics Week" and assignment["subject"] == "Mathematics":
+                    planned_activity = "Collaborative mathematics challenge"
+                elif event_name == "Reading Week" and assignment["subject"] == "English":
+                    planned_activity = "Collaborative reading activity"
+                rows.append(
+                    {
+                        "calendar_entry_id": f"CAL{entry_number:06d}",
+                        "school_id": assignment["school_id"],
+                        "class_id": assignment["class_id"],
+                        "teacher_id": assignment["teacher_id"],
+                        "timetable_assignment_id": assignment["timetable_assignment_id"],
+                        "calendar_date": current.isoformat(),
+                        "academic_year": current.year,
+                        "term": term_for_date(current),
+                        "weekday": current.isoweekday(),
+                        "period_number": assignment["period_number"],
+                        "start_time": assignment["start_time"],
+                        "end_time": assignment["end_time"],
+                        "subject": assignment["subject"],
+                        "planned_activity": planned_activity,
+                        "event_name": event_name,
+                        "event_type": event_type,
+                    }
+                )
+                entry_number += 1
+        current += timedelta(days=1)
+    return rows
+
+
+def attendance_status(rng: random.Random, learner_number: int, session_index: int) -> str | None:
+    pattern = learner_number % 5
+    if pattern == 0:
+        weights = (0.93, 0.04, 0.01, 0.01, 0.01)
+    elif pattern == 1:
+        weights = (0.78, 0.10, 0.08, 0.03, 0.01)
+    elif pattern == 2:
+        weights = (0.57, 0.09, 0.25, 0.07, 0.02)
+    elif pattern == 3:
+        if rng.random() < 0.18:
+            return None
+        weights = (0.80, 0.09, 0.06, 0.03, 0.02)
+    else:
+        in_absence_cluster = 35 <= session_index % 90 <= 44
+        weights = (
+            (0.25, 0.10, 0.55, 0.08, 0.02)
+            if in_absence_cluster
+            else (0.84, 0.08, 0.05, 0.02, 0.01)
+        )
+    return rng.choices(
+        ("present", "late", "absent", "excused", "unknown"),
+        weights=weights,
+        k=1,
+    )[0]
+
+
+def make_attendance(
+    enrollments: list[dict], calendar: list[dict], seed: int
+) -> list[dict]:
+    rng = random.Random(seed + 1)
+    sessions_by_class: dict[str, list[dict]] = {}
+    for session in calendar:
+        sessions_by_class.setdefault(session["class_id"], []).append(session)
+
+    rows = []
+    sequence = 1
+    for enrollment in enrollments:
+        learner_number = int(enrollment["learner_id"][1:])
+        sessions = sessions_by_class[enrollment["class_id"]]
+        for session_index, session in enumerate(sessions):
+            status = attendance_status(rng, learner_number, session_index)
+            if status is None:
+                continue
+            starts_at = datetime.combine(
+                date.fromisoformat(session["calendar_date"]),
+                time.fromisoformat(session["start_time"]),
+                tzinfo=timezone.utc,
+            )
+            rows.append(
+                {
+                    "attendance_id": f"ATT{sequence:08d}",
+                    "learner_id": enrollment["learner_id"],
+                    "class_id": enrollment["class_id"],
+                    "academic_year": enrollment["academic_year"],
+                    "calendar_entry_id": session["calendar_entry_id"],
+                    "calendar_date": session["calendar_date"],
+                    "status": status,
+                    "recorded_at": starts_at.isoformat(),
+                    "recorded_by_teacher_id": session["teacher_id"],
+                    "source": "teacher_register",
+                    "note": "",
+                }
+            )
+            sequence += 1
+    return rows
+
+
+def make_observation(
+    observation_id: str,
+    learner_id: str,
+    session: dict,
+    rng: random.Random,
+    *,
+    content: str | None = None,
+    observation_type: str | None = None,
+) -> dict:
+    source_type = rng.choice(tuple(SOURCES))
+    return {
+        "observation_id": observation_id,
+        "learner_id": learner_id,
+        "teacher_id": session["teacher_id"],
+        "school_id": session["school_id"],
+        "class_id": session["class_id"],
+        "academic_year": session["academic_year"],
+        "observation_date": session["calendar_date"],
+        "observed_at": datetime.combine(
+            date.fromisoformat(session["calendar_date"]),
+            time.fromisoformat(session["start_time"]),
+            tzinfo=timezone.utc,
+        ).isoformat(),
+        "term": session["term"],
+        "calendar_entry_id": session["calendar_entry_id"],
+        "observation_type": observation_type or rng.choice(
+            ("participation", "academic", "behavioral", "extracurricular", "other")
+        ),
+        "original_observation": content or rng.choice(OBSERVATIONS),
+        "subject": session["subject"],
+        "activity_context": rng.choice(
+            ("Group project", "Whole-class discussion", "Independent task", "Pair work", "Practical activity")
+        ),
+        "source_type": source_type,
+        "capture_method": SOURCES[source_type],
+        "possible_theme": rng.choice(THEMES),
+        "verification_status": rng.choice(VERIFICATION_STATUSES),
+        "submission_id": f"seed-{observation_id}",
+        "linked_test_id": "",
+    }
+
+
+def make_observations(
+    enrollments: list[dict], calendar: list[dict], seed: int
+) -> tuple[list[dict], dict[tuple[str, str], list[str]]]:
+    rng = random.Random(seed)
+    sessions_by_class: dict[str, list[dict]] = {}
+    for session in calendar:
+        sessions_by_class.setdefault(session["class_id"], []).append(session)
+    rows = []
+    learner_observation_ids: dict[tuple[str, str], list[str]] = {}
+
+    for enrollment in enrollments:
+        learner_id = enrollment["learner_id"]
+        enrollment_key = (learner_id, enrollment["class_id"])
+        sessions = sessions_by_class[enrollment["class_id"]]
+        for _ in range(rng.randint(2, 4)):
+            session = rng.choice(sessions)
+            observation_id = f"OBS{len(rows) + 1:06d}"
+            rows.append(make_observation(observation_id, learner_id, session, rng))
+            learner_observation_ids.setdefault(enrollment_key, []).append(observation_id)
+    return rows, learner_observation_ids
+
+
+def make_tests(
+    enrollments: list[dict],
+    calendar: list[dict],
+    observations: list[dict],
+    learner_observation_ids: dict[tuple[str, str], list[str]],
+    seed: int,
+) -> tuple[list[dict], list[dict]]:
+    rng = random.Random(seed + 10)
+    sessions_by_class: dict[str, list[dict]] = {}
+    for session in calendar:
+        sessions_by_class.setdefault(session["class_id"], []).append(session)
+    tests = []
+    outcome_observations = []
+    for enrollment in enrollments:
+        learner_id = enrollment["learner_id"]
+        if rng.random() >= 0.45:
             continue
-
-        # Some learners get a suggested activity; others get only a few observations.
-        activity_count = random.randint(1, 2) if random.random() < 0.75 else 0
-        for i in range(activity_count):
-            trigger_ids = random.sample([obs["observation_id"] for obs in learner_obs], k=min(2, len(learner_obs)))
-            used_observation_ids[learner_id] = trigger_ids
-            test_date = random_date(date(2025, 2, 1), date(2026, 9, 1))
-            conducting_teacher = random.choice(teacher_ids)
-            suggested_activity = random.choice(SUGGESTED_ACTIVITIES)
-            status = random.choice(["Completed", "In progress", "Completed", "Pending"])
-
+        learner_sessions = sessions_by_class[enrollment["class_id"]]
+        for _ in range(rng.randint(1, 2)):
+            session = rng.choice(learner_sessions)
+            status = rng.choice(("Completed", "In progress", "Pending"))
+            test_id = f"TEST{len(tests) + 1:06d}"
             outcome_observation_id = ""
             observed_outcome = ""
             if status == "Completed":
-                outcome_observation_id = create_observation_id(1000 + outcome_counter)
-                outcome_counter += 1
-                observed_outcome = random.choice([
-                    "Helped peers divide tasks and stayed with the task without repeated prompting.",
-                    "Completed the task with fewer prompts than before and explained the final answer.",
-                    "Participated more confidently in the group and took a leadership role when asked.",
-                    "Needed support at the start but recovered after a short check-in.",
-                ])
-
+                outcome_observation_id = f"OBS{len(observations) + len(outcome_observations) + 1:06d}"
+                observed_outcome = rng.choice(
+                    (
+                        "Completed the task with fewer prompts and explained the final answer.",
+                        "Participated more confidently in the group activity.",
+                        "Needed support at the start but recovered after a short check-in.",
+                    )
+                )
+                outcome_observations.append(
+                    make_observation(
+                        outcome_observation_id,
+                        learner_id,
+                        session,
+                        rng,
+                        content=observed_outcome,
+                        observation_type="test_result",
+                    )
+                )
+            enrollment_key = (learner_id, enrollment["class_id"])
+            learner_observations = learner_observation_ids.get(enrollment_key, [])
+            trigger_ids = rng.sample(
+                learner_observations,
+                k=min(2, len(learner_observations)),
+            )
             tests.append(
                 {
-                    "test_id": create_test_id(len(tests) + 1),
+                    "test_id": test_id,
                     "learner_id": learner_id,
                     "trigger_observation_ids": ", ".join(trigger_ids),
-                    "suggested_activity": suggested_activity,
-                    "activity_date": test_date.isoformat(),
-                    "conducting_teacher_id": conducting_teacher,
+                    "suggested_activity": rng.choice(ACTIVITIES),
+                    "activity_date": session["calendar_date"],
+                    "conducting_teacher_id": session["teacher_id"],
                     "observed_outcome": observed_outcome,
                     "outcome_observation_id": outcome_observation_id,
                     "status": status,
                 }
             )
+    return tests, outcome_observations
 
-    return tests
 
-
-def generate_teacher_reviews(learners: list[dict], observations: list[dict], tests: list[dict], teacher_ids: list[str]) -> list[dict]:
+def make_teacher_reviews(
+    enrollments: list[dict],
+    teachers: list[dict],
+    learner_observation_ids: dict[tuple[str, str], list[str]],
+    tests: list[dict],
+    seed: int,
+) -> list[dict]:
+    rng = random.Random(seed + 20)
+    teacher_ids = [teacher["teacher_id"] for teacher in teachers]
     reviews = []
-    note_index = 1
-
-    for learner in learners:
-        learner_id = learner["learner_id"]
-        relevant_obs = [obs["observation_id"] for obs in observations if obs["learner_id"] == learner_id]
-        relevant_tests = [test for test in tests if test["learner_id"] == learner_id]
-        if not relevant_obs and not relevant_tests:
+    for enrollment in enrollments:
+        learner_id = enrollment["learner_id"]
+        learner_tests = [test for test in tests if test["learner_id"] == learner_id]
+        learner_obs = learner_observation_ids.get((learner_id, enrollment["class_id"]), [])
+        if not learner_obs and not learner_tests:
             continue
-
-        evidence_ids = relevant_obs[:3]
-        if relevant_tests:
-            evidence_ids.append(relevant_tests[0]["test_id"])
-
-        reviewer = random.choice(teacher_ids)
-        review_status = random.choice(["Approved", "Drafted", "Needs revision"])
-        review_comments = random.choice([
-            "The pattern is worth continuing to monitor.",
-            "Evidence is consistent but more observations would strengthen the picture.",
-            "Good support for a follow-up discussion with the learner.",
-            "This draft is cautious and grounded in the actual observations.",
-        ])
-
+        note_id = f"NOTE{len(reviews) + 1:06d}"
+        evidence_ids = learner_obs[:3] + [test["test_id"] for test in learner_tests[:1]]
         reviews.append(
             {
-                "note_id": f"NOTE{note_index:03d}",
+                "note_id": note_id,
                 "learner_id": learner_id,
                 "evidence_ids": ", ".join(evidence_ids),
-                "draft_text": f"There is emerging evidence that {learner_id} shows stronger collaboration and task persistence in structured activities. The pattern should be monitored, not treated as a fixed conclusion.",
-                "reviewer_id": reviewer,
-                "review_status": review_status,
-                "reviewed_at": random_date(date(2025, 3, 1), date(2026, 9, 1)).isoformat(),
-                "review_comments": review_comments,
+                "draft_text": (
+                    f"There is emerging evidence that {learner_id} shows stronger "
+                    "collaboration and task persistence in structured activities. "
+                    "The pattern should be monitored, not treated as a fixed conclusion."
+                ),
+                "reviewer_id": rng.choice(teacher_ids),
+                "review_status": rng.choice(("Approved", "Drafted", "Needs revision")),
+                "reviewed_at": f"{enrollment['academic_year']}-09-01",
+                "review_comments": "Synthetic review; evidence should be interpreted cautiously.",
             }
         )
-        note_index += 1
-
     return reviews
 
 
-def write_csv(path: Path, fieldnames: list[str], rows: list[dict]) -> None:
-    with path.open("w", newline="", encoding="utf-8") as csvfile:
-        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-        writer.writeheader()
-        for row in rows:
-            writer.writerow({key: row.get(key, "") for key in fieldnames})
-
-
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Generate the Dira hackathon synthetic dataset.")
-    parser.add_argument("--learners", type=int, default=12, help="Number of learners to create")
-    parser.add_argument("--academic-year", type=int, default=2026, help="Academic year for output records")
-    parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducible results")
-    parser.add_argument("--output-dir", type=str, default="data/generated", help="Directory to write generated CSV files")
-    parser.add_argument("--include-teacher-reviews", action="store_true", help="Also generate teacher_reviews.csv")
-    parser.add_argument("--calendar-only", action="store_true", help="Generate only school_calendar.csv")
-    parser.add_argument("--observations-only", action="store_true", help="Regenerate observations and school_calendar.csv using learners.csv already in the output directory")
+    parser = argparse.ArgumentParser(description="Generate a DIRA synthetic school dataset.")
+    parser.add_argument("--learners", type=int, default=50)
+    parser.add_argument("--academic-year", type=int, default=2026)
+    parser.add_argument("--streams-per-grade", type=int, default=2)
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--output-dir", type=Path, default=Path("data/generated_dev"))
+    parser.add_argument("--include-teacher-reviews", action="store_true")
     args = parser.parse_args()
+    if args.learners < 1 or not 1 <= args.streams_per_grade <= 26:
+        parser.error("--learners must be positive and --streams-per-grade must be 1-26")
 
-    output_dir = Path(args.output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
+    first_year = args.academic_year - 1
+    last_year = args.academic_year
+    args.output_dir.mkdir(parents=True, exist_ok=True)
 
-    calendar = generate_school_calendar(args.academic_year - 1, args.academic_year)
-    write_csv(
-        output_dir / "school_calendar.csv",
-        [
-            "calendar_entry_id",
-            "calendar_date",
-            "academic_year",
-            "term",
-            "year_group",
-            "weekday",
-            "period_number",
-            "start_time",
-            "end_time",
-            "subject",
-            "planned_activity",
-            "event_name",
-            "event_type",
-        ],
-        calendar,
+    schools = make_school()
+    teachers = make_teachers()
+    classes = make_classes(first_year, last_year, args.streams_per_grade)
+    learners, enrollments = make_learners(args.learners, args.streams_per_grade)
+    assignments = make_timetable(classes, teachers)
+    calendar = make_school_calendar(assignments, first_year, last_year)
+    attendance = make_attendance(enrollments, calendar, args.seed)
+    observations, learner_observation_ids = make_observations(enrollments, calendar, args.seed)
+    tests, outcome_observations = make_tests(
+        enrollments, calendar, observations, learner_observation_ids, args.seed
     )
+    all_observations = observations + outcome_observations
 
-    if args.calendar_only:
-        print(f"Generated school calendar in {output_dir}")
-        print(f"calendar_entries={len(calendar)}")
-        return
-
-    teacher_ids = ["T001", "T002", "T003", "T004", "T005"]
-    if args.observations_only:
-        learners_path = output_dir / "learners.csv"
-        with learners_path.open("r", newline="", encoding="utf-8") as csvfile:
-            learners = list(csv.DictReader(csvfile))
-    else:
-        learners = generate_learners(args.learners, args.academic_year)
-
-    observations, _ = generate_observations(learners, teacher_ids, calendar, args.seed)
-
-    if not args.observations_only:
-        write_csv(
-            output_dir / "learners.csv",
-            ["learner_id", "grade_level", "academic_year", "enrolment_status"],
-            learners,
-        )
-    write_csv(
-        output_dir / "observations.csv",
-        [
-            "observation_id",
-            "learner_id",
-            "observation_date",
-            "term",
-            "calendar_entry_id",
-            "teacher_id",
-            "activity_context",
-            "original_observation",
-            "source_type",
-            "possible_theme",
-            "verification_status",
-        ],
-        observations,
-    )
-
-    if args.observations_only:
-        print(f"Generated observations and school calendar in {output_dir}")
-        print(f"observations={len(observations)} calendar_entries={len(calendar)}")
-        return
-
-    tests = generate_activity_tests(learners, observations, teacher_ids, args.seed)
-    write_csv(
-        output_dir / "activity_tests.csv",
-        [
-            "test_id",
-            "learner_id",
-            "trigger_observation_ids",
-            "suggested_activity",
-            "activity_date",
-            "conducting_teacher_id",
-            "observed_outcome",
-            "outcome_observation_id",
-            "status",
-        ],
-        tests,
-    )
+    datasets: dict[str, tuple[list[str], list[dict]]] = {
+        "schools": (["school_id", "school_name"], schools),
+        "teachers": (["teacher_id", "school_id", "display_name"], teachers),
+        "classes": (
+            ["class_id", "school_id", "grade_level", "stream_label", "academic_year"],
+            classes,
+        ),
+        "learners": (["learner_id", "display_name"], learners),
+        "learner_enrollments": (
+            [
+                "learner_id",
+                "class_id",
+                "school_id",
+                "academic_year",
+                "enrolment_status",
+                "enrolled_from",
+                "enrolled_to",
+            ],
+            enrollments,
+        ),
+        "timetable_assignments": (
+            [
+                "timetable_assignment_id",
+                "school_id",
+                "class_id",
+                "teacher_id",
+                "academic_year",
+                "weekday",
+                "period_number",
+                "start_time",
+                "end_time",
+                "subject",
+                "valid_from",
+                "valid_to",
+            ],
+            assignments,
+        ),
+        "school_calendar": (
+            [
+                "calendar_entry_id",
+                "school_id",
+                "class_id",
+                "teacher_id",
+                "timetable_assignment_id",
+                "calendar_date",
+                "academic_year",
+                "term",
+                "weekday",
+                "period_number",
+                "start_time",
+                "end_time",
+                "subject",
+                "planned_activity",
+                "event_name",
+                "event_type",
+            ],
+            calendar,
+        ),
+        "attendance": (
+            [
+                "attendance_id",
+                "learner_id",
+                "class_id",
+                "academic_year",
+                "calendar_entry_id",
+                "calendar_date",
+                "status",
+                "recorded_at",
+                "recorded_by_teacher_id",
+                "source",
+                "note",
+            ],
+            attendance,
+        ),
+        "observations": (
+            [
+                "observation_id",
+                "learner_id",
+                "teacher_id",
+                "school_id",
+                "class_id",
+                "academic_year",
+                "observation_date",
+                "observed_at",
+                "term",
+                "calendar_entry_id",
+                "observation_type",
+                "original_observation",
+                "subject",
+                "activity_context",
+                "source_type",
+                "capture_method",
+                "possible_theme",
+                "verification_status",
+                "submission_id",
+                "linked_test_id",
+            ],
+            all_observations,
+        ),
+        "activity_tests": (
+            [
+                "test_id",
+                "learner_id",
+                "trigger_observation_ids",
+                "suggested_activity",
+                "activity_date",
+                "conducting_teacher_id",
+                "observed_outcome",
+                "outcome_observation_id",
+                "status",
+            ],
+            tests,
+        ),
+    }
+    for name, (fields, rows) in datasets.items():
+        write_csv(args.output_dir / f"{name}.csv", fields, rows)
 
     if args.include_teacher_reviews:
-        reviews = generate_teacher_reviews(learners, observations, tests, teacher_ids)
+        reviews = make_teacher_reviews(
+            enrollments, teachers, learner_observation_ids, tests, args.seed
+        )
         write_csv(
-            output_dir / "teacher_reviews.csv",
+            args.output_dir / "teacher_reviews.csv",
             [
                 "note_id",
                 "learner_id",
@@ -483,10 +631,11 @@ def main() -> None:
             ],
             reviews,
         )
-
-    print(f"Generated dataset in {output_dir}")
-    print(f"learners={len(learners)} observations={len(observations)} tests={len(tests)}")
-    print(f"calendar_entries={len(calendar)}")
+    print(
+        f"Generated {len(learners)} learners, {len(classes)} classes, "
+        f"{len(calendar)} scheduled periods, {len(attendance)} attendance records, "
+        f"{len(all_observations)} observations, and {len(tests)} tests in {args.output_dir}"
+    )
 
 
 if __name__ == "__main__":

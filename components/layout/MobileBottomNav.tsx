@@ -2,6 +2,7 @@ import Link from "next/link";
 
 const navigation = [
   { name: "This Week", href: "/this-week", icon: "📅" },
+  { name: "Calls", href: "/follow-up-calls", icon: "☎️" },
   { name: "Learners", href: "/learners", icon: "👥" },
   { name: "Observe", href: "/observation-log", icon: "✏️" },
   { name: "Evidence", href: "/evidence/demo", icon: "📄" },

@@ -68,6 +68,14 @@ If validation fails, retain the draft and explain what needs correction. If the 
 
 An external transcription failure must produce an actionable error and no fabricated transcript. A separate planned basic-phone callback uses Africa's Talking Voice and should converge on this same observation pipeline once implemented.
 
+Phone/in-app voice observations use the separate teacher-review states `recorded`,
+`confirmed`, and `updated`; they are not evidence verification states. A teacher's
+review keeps the original transcript intact and writes edits and reviewer metadata
+to review history. The chat offers compact confirm/edit actions, while the learner
+record exposes full edit, observation-type, and optional suggested-test controls.
+These controls are implemented for the development demo context; production teacher
+authentication and the voice-to-transcript provider path remain unconfigured.
+
 ## 5. Flow D — Suggest a classroom test
 
 ```mermaid

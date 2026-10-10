@@ -1,0 +1,23 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: dira_dev
+      POSTGRES_USER: dira_dev
+      POSTGRES_PASSWORD: dira_local_dev_only
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - dira-postgres-data:/var/lib/postgresql/data
+      - ./lib/db/dataset_schema.sql:/docker-entrypoint-initdb.d/001-dataset-schema.sql:ro
+      - ./db/002_follow_up_queue.sql:/docker-entrypoint-initdb.d/002-follow-up-queue.sql:ro
+      - ./db/003_voice_call_lifecycle.sql:/docker-entrypoint-initdb.d/003-voice-call-lifecycle.sql:ro
+      - ./db/004_observation_teacher_review.sql:/docker-entrypoint-initdb.d/004-observation-teacher-review.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dira_dev -d dira_dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  dira-postgres-data:

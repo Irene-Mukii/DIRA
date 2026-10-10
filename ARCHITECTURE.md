@@ -25,18 +25,20 @@ Dira supports teachers in collecting and reviewing evidence about learners over 
 |---|---|---|---|
 | Web application | Next.js App Router + React + TypeScript | Pages, layouts, UI, and server-side application routes | Dira code; repository structure exists |
 | Styling | Global CSS and reusable UI components | Responsive desktop/mobile presentation and shared visual language | Dira code |
-| Model | GLM-5.3 through a hosted API | Reason over relevant context and propose appropriate next actions | External hosted model; provider and API configuration must be confirmed |
+| Model | GLM-5.3 through the Z.AI chat-completions API | Reason over bounded workflow context and select permitted tools | Server adapter implemented; `ZAI_API_KEY` must be configured and live execution remains unverified |
 | Model abstraction | `lib/models.ts` | Keep provider/model configuration replaceable and server-side | Dira code |
 | Agent orchestration | `lib/agent/orchestrator.ts` | Decide which agent action to run and coordinate the workflow | Dira code |
-| MCP client | `lib/agent/mcp-client.ts` | Discover/invoke tools, validate tool arguments, handle errors/timeouts, and trace calls | Dira code |
+| MCP client | `lib/agent/mcp-client.ts` | Streamable HTTP transport through the official MCP SDK, OAuth-provider injection, tool discovery/invocation, request timeouts, and error propagation | Client foundation implemented; secure OAuth session/token persistence and live Keeper verification remain |
+| Dira MCP server | `app/api/mcp/server/route.ts` + `lib/mcp-tools/dira-server.ts` | Expose Dira observation and scheduled-call capabilities to authorized MCP clients | Stateless Streamable HTTP demo endpoint implemented with a shared bearer token; not production-grade user authorization |
+| Scheduled agent trigger | `app/api/internal/follow-up-agent/route.ts` + `lib/agent/orchestrator.ts` | Wake a bounded GLM agent that uses Dira's MCP client to inspect, prepare, and dispatch follow-up work | Agent and protected trigger implemented; hosting scheduler is not selected/configured |
 | Dira MCP tool: observation | `lib/mcp-tools/logObservation.ts` | Validate and persist a teacher observation through the approved tool workflow | Dira-owned tool |
 | Dira MCP tool: test suggestion | `lib/mcp-tools/suggestTest.ts` | Propose a small, practical classroom test grounded in learner evidence | Dira-owned tool |
 | Evidence summary | `lib/mcp-tools/draftPathwayNote.ts` (existing filename) | Build the evidence-grounded content used by the Learner Evidence Card; must not assign a pathway or produce a learner verdict | Dira-owned capability; filename is legacy and can be renamed later |
 | Database | PostgreSQL | System of record for learners, observations, questions/tests, outcomes, and evidence summaries/references | Dira data store; schema/client files are present in the planned structure |
 | Speech-to-text | Whissle | Transcribe audio from in-app voice notes or captured telephone audio | External API; confirm account, endpoint, audio format, and limits |
 | SMS | Africa's Talking SMS API | Send short teacher reminders and weekly focus messages | External API; selected provider |
-| Outbound voice | Africa's Talking Voice API | Initiate calls to teachers to capture an observation by phone | External API; selected provider; verify caller ID, outbound-call, recording/IVR, callback, and Kenya account requirements |
-| Calendar MCP server (borrowed) | Keeper.sh MCP server — repository: https://github.com/ridafkih/keeper.sh; hosted MCP endpoint: `https://www.keeper.sh/mcp` | Give Dira one MCP interface for connected Google Calendar, Outlook/Microsoft 365, iCloud, Fastmail, CalDAV, and read-only ICS/iCal feeds | Existing third-party open-source MCP server under AGPL-3.0; selected for Dira, pending authentication, tool-call, and end-to-end verification |
+| Outbound voice | Africa's Talking Voice API | Initiate a scheduled teacher follow-up; audio capture is a later phase | Server-side request adapter, demo-gated due dispatcher, and teacher-scoped development status page implemented; credentials, callbacks, teacher authentication/consent, and live calls remain unverified |
+| Calendar MCP server (borrowed) | Keeper.sh MCP server — repository: https://github.com/ridafkih/keeper.sh; hosted MCP endpoint: `https://www.keeper.sh/mcp` | Give Dira one MCP interface for connected Google Calendar, Outlook/Microsoft 365, iCloud, Fastmail, CalDAV, and read-only ICS/iCal feeds | Selected; client transport and bounded read-only adapter implemented, but OAuth authorization and an authenticated tool call remain unverified |
 | Calendar provider access | Calendar accounts connected through Keeper.sh | Supply lesson schedule and timing context for follow-up workflows | External calendar providers; Dira should call the borrowed server through MCP rather than label a direct provider API adapter as an MCP server |
 | Educational-source retrieval | External retrieval/search adapter to approved sources (e.g. IBEF, AMI, WWC) | Quickly retrieve relevant educational guidance when generating a suggested classroom test | Required agent behaviour; exact provider/adapter must be selected and verified. No persistent source catalogue table in PostgreSQL for the MVP |
 | Logging | `lib/agent/logger.ts` and `agent_activity_logs` concept | Trace runs, tool calls, status, latency, model, and errors | Dira code/data design; do not log private chain-of-thought |
@@ -47,18 +49,22 @@ Dira supports teachers in collecting and reviewing evidence about learners over 
 ### Keeper.sh integration decision and verification checklist
 
 1. Use Keeper.sh as the borrowed external calendar MCP server; do not replace this with a direct Google Calendar REST integration and call it MCP.
-2. Start with the hosted MCP endpoint documented by Keeper (`https://www.keeper.sh/mcp`) and confirm that Dira’s MCP client supports streamable HTTP plus the hosted OAuth 2.1 consent flow.
+2. Start with the hosted MCP endpoint documented by Keeper (`https://www.keeper.sh/mcp`). Dira's client now supports Streamable HTTP and accepts an OAuth provider; implement secure per-user OAuth callback and token persistence before claiming hosted authentication support.
 3. Connect a test calendar account through Keeper.sh and request a small, date-bounded set of events using an actual MCP tool such as `list_calendars` or `get_events`.
 4. Pass only the minimum schedule context needed by Dira. Calendar data is timing context, never evidence that a lesson or learner activity occurred.
 5. Handle authentication failure, unavailable calendars, rate limits, and request timeouts. Keeper’s hosted free plan documents a combined 25 API/MCP requests per day; check current plan limits before the demo.
-6. Record the external server’s repository and the successful MCP call in the demo/evaluation notes. Until this test passes, describe Keeper as **selected/planned**, not as a completed integration.
+6. Record the external server's repository and the successful MCP call in the demo/evaluation notes. Until this test passes, describe Keeper as **selected with client foundation implemented**, not as a completed integration.
 
 ### What is ours and what is borrowed?
 
 **Built for Dira**
 - Teacher-facing pages and reusable components.
 - Agent orchestration, model abstraction, MCP client, and activity logging.
-- Dira's own MCP tools: `log_observation`, `suggest_test`, and the evidence-summary capability.
+- Dira's own MCP tools: `log_observation`, `prepare_daily_follow_up_queue`,
+  `list_due_follow_ups`, and `dispatch_one_due_follow_up`. Scheduled runs cannot
+  call `log_observation`; model-generated remarks are not valid observation evidence.
+- `suggest_test` and evidence-summary capabilities exist in Dira, but are not tools
+  on the deployed Dira MCP endpoint yet.
 - Database schema, application validation, test lifecycle, and evidence-card assembly.
 
 **External/borrowed services and MCP**
@@ -126,6 +132,7 @@ flowchart TD
 9. **Record the outcome.** After trying the activity, the teacher records what happened. Link the outcome to the test where applicable; do not infer an outcome from a calendar event.
 10. **Build the Learner Evidence Card.** The evidence-summary capability assembles questions explored, tests conducted, and observed outcomes from underlying records. Every factual claim is checked against source evidence.
 11. **Teacher reviews the card.** The card supports professional judgement; it is not a verdict, diagnosis, learner ranking, or pathway assignment.
+12. **Review follow-up activity.** `/follow-up-calls` shows the configured development teacher's own queue/provider-submission statuses and recorded observations awaiting review. Provider acceptance is not presented as an answered call. This page is unavailable in production until authenticated teacher sessions are implemented.
 
 ### MVP exclusions
 
@@ -143,6 +150,7 @@ flowchart TD
 flowchart TB
     subgraph UX["Dira frontend — built by our team"]
         TW[This Week]
+        FC[Follow-up Activity — development demo only]
         LR[Learner Record]
         LO[Chat-style Log Observation]
         TT[Try This]
@@ -152,6 +160,10 @@ flowchart TB
     subgraph APP["Next.js application backend — built by our team"]
         ROUTES[App Router pages and route handlers]
         AUTH[Authentication / authorisation and request validation]
+        QUEUE[Follow-up queue service]
+        CRON[Protected queue trigger; hosting scheduler not configured]
+        CALL_DISPATCH[Protected due-call dispatcher]
+        VOICE_PROMPT[Static Africa's Talking voice prompt]
         ORCH[Agent orchestrator]
         MODEL[Model abstraction: lib/models.ts]
         CLIENT[MCP client: discover, invoke, validate, trace]
@@ -168,6 +180,7 @@ flowchart TB
     subgraph DATA["Dira data store"]
         PG[(PostgreSQL)]
         RECORDS[Learners, observations, questions, tests, outcomes, evidence references]
+        QUEUE_RECORDS[Closure coverage, closure dates, follow-up queue jobs]
     end
 
     subgraph EXT["External services — borrowed"]
@@ -181,11 +194,19 @@ flowchart TB
     end
 
     TW --> ROUTES
+    FC --> ROUTES
     LR --> ROUTES
     LO --> ROUTES
     TT --> ROUTES
     EC --> ROUTES
     ROUTES --> AUTH
+    CRON --> ROUTES
+    ROUTES --> QUEUE
+    QUEUE --> PG
+    CRON --> CALL_DISPATCH
+    CALL_DISPATCH --> PG
+    CALL_DISPATCH --> ATVOICE
+    ATVOICE --> VOICE_PROMPT
     AUTH --> DBACCESS
     DBACCESS <--> PG
     AUTH --> ORCH
@@ -208,9 +229,9 @@ flowchart TB
     KEEPER <--> CALPROV
     ORCH -->|bounded retrieval request| EDU
     ORCH --> ATSMS
-    ORCH --> ATVOICE
     ATVOICE --> WHISSLE
     PG --- RECORDS
+    PG --- QUEUE_RECORDS
 ```
 
 **Diagram notes**
@@ -218,11 +239,69 @@ flowchart TB
 - The agent uses the model for reasoning and the MCP client to discover/invoke Dira tools. Deterministic validation must still enforce safety; the model alone is not a security boundary.
 - Core observation writes go through `log_observation`. Other application reads may use the authorised data-access layer; not every simple database read needs an LLM or MCP call.
 - Africa's Talking handles both SMS and outbound voice. Whissle transcribes audio; it does not initiate calls.
+- The due-call dispatcher is a deterministic server-side workflow, not an LLM action. It only submits calls after schedule revalidation and only in local demo mode; the public voice callback returns a fixed prompt and does not record audio.
 - Keeper.sh is the intended borrowed MCP server. Dira connects through its MCP client; the server mediates access to calendars connected to Keeper. Google Calendar is one supported provider, not a direct Dira-to-Google REST integration in this design. Provider support and authentication must be verified during setup.
 - Before test suggestions, educational-source retrieval is attempted externally with a strict timeout. A retrieval timeout/failure falls back to the available learner evidence and model knowledge and must be visible in internal status/source attribution. No educational-source catalogue/content table is required in PostgreSQL for this behaviour.
 - Calendar information provides schedule/context. A scheduler, provider event, or other explicit trigger must wake the workflow; the model does not run continuously.
 - Every external integration must handle timeouts, provider errors, retries, status callbacks, and idempotency as applicable.
 - The diagram describes intended connections. Verify exact runtime wiring and provider capabilities during implementation.
+
+### PostgreSQL data model and table relationships
+
+This entity-relationship diagram reflects the canonical fresh-development schema in
+`lib/db/dataset_schema.sql`. A scheduled calendar row describes a class period;
+attendance records a learner's status at that period; an observation records
+teacher evidence and may optionally refer to the period. A missing attendance
+row is not itself an absence.
+
+```mermaid
+erDiagram
+    schools ||--o{ teachers : has
+    schools ||--o{ classes : contains
+    schools ||--o{ learner_enrollments : scopes
+    schools ||--o{ school_closure_coverage : confirms
+    schools ||--o{ school_closures : closes_on
+    schools ||--o{ teacher_follow_up_jobs : queues
+    learners ||--o{ learner_enrollments : enrolls
+    classes ||--o{ learner_enrollments : groups
+
+    classes ||--o{ timetable_assignments : schedules
+    teachers ||--o{ timetable_assignments : teaches
+    timetable_assignments ||--o{ school_calendar : dates_as
+    classes ||--o{ school_calendar : has_periods
+    teachers ||--o{ school_calendar : assigned_to
+    school_calendar ||--o| teacher_follow_up_jobs : schedules
+
+    learner_enrollments ||--o{ attendance : has_marks
+    school_calendar ||--o{ attendance : records_for
+    teachers o|--o{ attendance : records
+
+    learner_enrollments ||--o{ observations : has_evidence
+    teachers ||--o{ observations : records
+    school_calendar o|--o{ observations : contextualizes
+    learners ||--o{ activity_tests : has_tests
+    teachers ||--o{ activity_tests : conducts
+    observations o|--o{ activity_tests : supplies_outcome
+    activity_tests ||--o{ activity_test_observations : cites
+    observations ||--o{ activity_test_observations : supports
+
+    learners ||--o{ teacher_reviews : reviewed_in
+    teachers ||--o{ teacher_reviews : reviews
+    teacher_reviews ||--o{ teacher_review_observations : cites
+    observations ||--o{ teacher_review_observations : reviewed_evidence
+    teacher_reviews ||--o{ teacher_review_tests : cites
+    activity_tests ||--o{ teacher_review_tests : reviewed_test
+```
+
+The enrollment-to-attendance and enrollment-to-observation links are composite
+foreign keys over learner, class, and academic year. Test outcome and linked-test
+references also enforce that the observation and test belong to the same learner.
+The junction tables allow a test or review to cite multiple supporting records.
+`school_closure_coverage` records that closure dates are complete for a date range;
+`school_closures` lists closed dates. Queue preparation fails closed if the school
+timezone or confirmed closure coverage is missing. `teacher_follow_up_jobs` are
+durable, idempotent queue entries due no earlier than the scheduled period end; they
+do not represent an initiated or completed phone call.
 
 ### Agent/tool responsibility boundaries
 
