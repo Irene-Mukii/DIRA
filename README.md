@@ -54,10 +54,22 @@ run `npm run db:seed:dev -- --check-only`.
 npm run dev
 ```
 
-`DIRA_DEMO_TEACHER_ID` and `DIRA_DEMO_SCHOOL_ID` enable the temporary local
-demo context. The application currently has no authenticated teacher session;
-the API intentionally refuses observation reads and writes in production
-instead of trusting a teacher ID sent by the browser.
+In development, Dira uses the oldest recorded teacher (ties are resolved by
+teacher ID) as a single demo identity. It does not trust a teacher ID from a
+browser or model. Set `DIRA_DEMO_MODE=true` only for an isolated demo database;
+in production this explicitly enables the unauthenticated single-teacher demo
+and is not suitable for real teacher or learner data. Production login and
+multi-teacher authorization remain deferred.
+
+The scheduled Dira agent uses the Z.AI GLM-5.3 API (`ZAI_API_KEY`) and connects
+to Dira's own Streamable HTTP MCP endpoint using `DIRA_MCP_SERVER_URL` and
+`DIRA_MCP_ACCESS_TOKEN`. Configure a long random server-side token; never expose
+it to browser code. `FOLLOW_UP_SCHEDULER_SECRET` protects
+`POST /api/internal/follow-up-agent`, whose JSON body selects either
+`{"trigger":"prepare_queue"}` or `{"trigger":"dispatch_due"}`. Configure the
+deployment scheduler to call queue preparation at 7:00 a.m. on eligible
+weekdays and due dispatch at/after class end times. The repository exposes the
+trigger endpoint but does not select or configure a hosting scheduler.
 
 Voice transcription, calendar integration, and real outbound calling are not
 connected by this development database setup.

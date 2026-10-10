@@ -4,6 +4,7 @@ import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
 import ObservationReviewControls from "@/components/observations/ObservationReviewControls";
 import { pool } from "@/lib/db/client";
+import { resolveTeacherContext } from "@/lib/auth/teacher-context";
 
 interface LearnerProfile {
   learner_id: string;
@@ -44,9 +45,11 @@ export default async function LearnerDetailPage({
 }) {
   await connection();
   const { learnerId } = await params;
-  const schoolId = process.env.DIRA_DEMO_SCHOOL_ID?.trim();
 
-  if (process.env.NODE_ENV === "production") {
+  if (
+    process.env.NODE_ENV === "production" &&
+    process.env.DIRA_DEMO_MODE !== "true"
+  ) {
     return (
       <Card className="p-6">
         <h1 className="text-xl font-semibold">Learner record unavailable</h1>
@@ -57,18 +60,20 @@ export default async function LearnerDetailPage({
     );
   }
 
-  if (!schoolId) {
-    return (
-      <Card className="p-6">
-        <h1 className="text-xl font-semibold">Learner record unavailable</h1>
-        <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
-          Configure the development school context and database before viewing learner records.
-        </p>
-      </Card>
-    );
-  }
-
   try {
+    const context = await resolveTeacherContext();
+    if (!context) {
+      return (
+        <Card className="p-6">
+          <h1 className="text-xl font-semibold">Learner record unavailable</h1>
+          <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
+            Add a teacher record before viewing the single-teacher demo.
+          </p>
+        </Card>
+      );
+    }
+    const schoolId = context.school_id;
+
     const profileResult = await pool.query<LearnerProfile>(
       `SELECT
          l.learner_id,

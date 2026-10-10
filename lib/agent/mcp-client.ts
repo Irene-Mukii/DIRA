@@ -18,7 +18,8 @@ export interface McpSession {
 
 export interface ConnectMcpOptions {
   endpoint: string;
-  authProvider: OAuthClientProvider;
+  authProvider?: OAuthClientProvider;
+  headers?: Record<string, string>;
   timeoutMs?: number;
 }
 
@@ -59,6 +60,7 @@ function validateMcpEndpoint(endpoint: string): URL {
 export async function connectMcpServer({
   endpoint,
   authProvider,
+  headers,
   timeoutMs = CLIENT_REQUEST_TIMEOUT_MS,
 }: ConnectMcpOptions): Promise<McpSession> {
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0) {
@@ -71,7 +73,10 @@ export async function connectMcpServer({
   );
   const transport = new StreamableHTTPClientTransport(
     validateMcpEndpoint(endpoint),
-    { authProvider },
+    {
+      ...(authProvider ? { authProvider } : {}),
+      ...(headers ? { requestInit: { headers } } : {}),
+    },
   );
 
   try {

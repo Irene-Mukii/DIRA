@@ -4,6 +4,7 @@ import Badge from "@/components/ui/Badge";
 import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
 import { pool } from "@/lib/db/client";
+import { resolveTeacherContext } from "@/lib/auth/teacher-context";
 
 interface LearnerListRecord {
   learner_id: string;
@@ -22,7 +23,10 @@ function formatLastObserved(value: Date | null): string {
 export default async function LearnersPage() {
   await connection();
 
-  if (process.env.NODE_ENV === "production") {
+  if (
+    process.env.NODE_ENV === "production" &&
+    process.env.DIRA_DEMO_MODE !== "true"
+  ) {
     return (
       <Card className="p-6">
         <h1 className="text-xl font-semibold">Learners unavailable</h1>
@@ -33,19 +37,19 @@ export default async function LearnersPage() {
     );
   }
 
-  const schoolId = process.env.DIRA_DEMO_SCHOOL_ID?.trim();
-  if (!schoolId) {
-    return (
-      <Card className="p-6">
-        <h1 className="text-xl font-semibold">Learners unavailable</h1>
-        <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
-          Configure the development school context to view learners.
-        </p>
-      </Card>
-    );
-  }
-
   try {
+    const context = await resolveTeacherContext();
+    if (!context) {
+      return (
+        <Card className="p-6">
+          <h1 className="text-xl font-semibold">Learners unavailable</h1>
+          <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
+            Add a teacher record before viewing the single-teacher demo.
+          </p>
+        </Card>
+      );
+    }
+
     const result = await pool.query<LearnerListRecord>(
       `SELECT
          l.learner_id,
@@ -76,7 +80,7 @@ export default async function LearnersPage() {
          c.stream_label,
          e.academic_year
        ORDER BY c.grade_level, c.stream_label, l.display_name`,
-      [schoolId],
+      [context.school_id],
     );
 
     return (
@@ -91,8 +95,8 @@ export default async function LearnersPage() {
         {result.rows.length === 0 ? (
           <Card className="p-6">
             <p className="text-sm text-gray-600 dark:text-gray-300">
-              No currently enrolled learners were found for this school. Check that the development
-              dataset has been imported and that its school ID matches the configured demo school.
+              No currently enrolled learners were found for this teacher&apos;s school. Check that the
+              development dataset has been imported.
             </p>
           </Card>
         ) : (

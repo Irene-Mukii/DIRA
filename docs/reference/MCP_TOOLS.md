@@ -4,7 +4,20 @@
 
 ## 1. MCP architecture
 
-Dira has a Dira-owned MCP server/tool surface for learner evidence operations and a client that connects the agent to tools. The team's server is planned within the TypeScript/Next.js repository. A Next.js route handler named `app/api/mcp/.../route.ts` is not automatically a standards-compliant MCP server: verify protocol/transport, discovery and invocation with an MCP client/Inspector.
+Dira exposes a Dira-owned, stateless Streamable HTTP MCP server at
+`POST /api/mcp/server`, implemented with the official MCP TypeScript SDK. It uses a
+server-side bearer token and is intentionally a single-teacher demo surface, not
+production user authentication. Verify discovery and invocation with an MCP
+client/Inspector after configuring the URL and token.
+
+The scheduled Dira agent is a separate component: a hosting scheduler calls the
+protected `POST /api/internal/follow-up-agent` trigger route, which wakes the
+GLM-5.3 agent. The agent uses `lib/agent/mcp-client.ts` to connect back to Dira's
+MCP server and discover tools. For queue preparation it may use queue-preparation
+and due-inspection tools; for due dispatch it may inspect and dispatch one job.
+`log_observation` is exposed to authorized MCP clients but deliberately excluded
+from scheduled runs so the agent cannot invent teacher remarks. The scheduler
+trigger endpoint exists; no hosting scheduler is configured by the repository.
 
 Dira must also use a borrowed server to satisfy the external-MCP requirement. **Keeper.sh** is the selected third-party calendar MCP server. `lib/agent/mcp-client.ts` now uses the official MCP SDK with Streamable HTTP transport and requires a caller-supplied OAuth client provider. `lib/external-mcp/calendar.ts` discovers tools and only invokes discovered tools marked read-only for its bounded count/event helpers. OAuth callback handling, secure token persistence, teacher-to-calendar authorization, and a live authenticated tool invocation are not yet implemented. Do not treat the client foundation as end-to-end verification.
 
@@ -15,14 +28,25 @@ Dira must also use a borrowed server to satisfy the external-MCP requirement. **
 | `log_observation` | Dira-owned | Validate and persist a teacher observation with provenance | Yes; creates observation |
 | `suggest_test` | Dira-owned | Review a learner's evidence, retrieve educational guidance quickly, and suggest a small classroom activity with citations | Usually yes if the suggestion/test record is persisted; exact persistence choice must be consistent in implementation |
 | `build_evidence_summary` | Dira-owned capability; legacy implementation filename may be `draftPathwayNote.ts` | Build Evidence Card content from real observations, tests, outcomes, gaps and contradictions | Read/compute; persist only if the implementation has an explicit, audited reason |
+| `prepare_daily_follow_up_queue` | Dira-owned MCP tool | Queue eligible schedule rows for the deterministic demo teacher and school; creates jobs only | Yes; idempotent database queue preparation |
+| `list_due_follow_ups` | Dira-owned MCP tool | List due queued jobs for the deterministic demo teacher | No; read-only candidate listing |
+| `dispatch_one_due_follow_up` | Dira-owned MCP tool | Request dispatch of at most one due job after server-side checks | Yes; guarded, atomic call attempt |
 | Keeper tools such as `list_calendars` / `get_events` where exposed | Borrowed external server | Retrieve authorised calendar context via MCP | Provider/tool-dependent; request only minimal read access for MVP |
 
-The exact public tool names and schemas returned by MCP discovery must match the implementation. If the existing tool is still exposed as `draft_pathway_note`, do not silently document it as `build_evidence_summary`: explicitly rename it or map the legacy name to the current card capability, then keep the registry, schemas, tests and docs aligned.
+The deployed Dira MCP endpoint currently exposes `log_observation`,
+`prepare_daily_follow_up_queue`, `list_due_follow_ups`, and
+`dispatch_one_due_follow_up`. The existing `suggest_test` and evidence-summary
+application routes are not thereby MCP tools. Keep the registry, schemas, tests
+and docs aligned with actual MCP discovery.
 
 ## 3. Shared tool rules
 
 - Validate JSON input with deterministic schemas before business logic runs.
-- Derive identity and permission from the authenticated application context. Do not trust model-supplied `observer_name`, `teacher_id`, school IDs or learner ownership as proof of permission.
+- Derive identity and permission from trusted server-side context. The demo
+  resolver deterministically selects the oldest recorded teacher (ties by ID);
+  never trust a model-, MCP-caller-, or browser-supplied teacher or school ID.
+  Production must replace this resolver with an authenticated per-user context
+  before handling real teacher/learner data.
 - Verify that each learner and linked test exists in the caller's authorised context.
 - Return structured success/error output; never invent IDs or report success before durable persistence is confirmed.
 - Never expose provider keys or internal stack traces in tool responses.
@@ -45,16 +69,18 @@ Preserve the teacher's original observation and source details as a durable evid
   "content": "string, required; teacher's observation in original wording",
   "subject": "string, optional",
   "term": "string, optional when the application can determine it",
-  "observed_at": "ISO-8601 datetime, optional; default to the verified observation time/current time by explicit policy",
+  "observed_at": "ISO-8601 datetime, required",
   "linked_test_id": "string or null, optional",
-  "capture_method": "text | in_app_voice | basic_phone_callback | other approved source",
-  "submission_id": "string, required for idempotent submission handling",
-  "transcript_reference": "string or null, optional",
-  "transcription_provider": "string or null, optional"
+  "activity_context": "string, optional",
+  "submission_id": "string, required for idempotent submission handling"
 }
 ```
 
-`observer_id`, school membership and permission should come from trusted authenticated context, not from an untrusted argument. If the runtime requires observer metadata in the tool arguments, compare it with the verified session before accepting it. The `capture_method` must be set by trusted workflow metadata, not blindly trusted from the model.
+The MCP tool currently accepts text observations only and assigns the `text`
+capture method server-side. `teacher_id`, `school_id`, and capture provenance are
+not accepted as tool arguments. This single-teacher demo context is not identity
+verification; production voice observations require the later authenticated
+teacher and verified transcription flow.
 
 ### Validation and processing
 

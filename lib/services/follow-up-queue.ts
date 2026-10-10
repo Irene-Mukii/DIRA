@@ -50,6 +50,7 @@ const VALID_SCHEDULE_SQL = `
    AND (assignment.valid_to IS NULL OR assignment.valid_to >= entry.calendar_date)
   WHERE entry.school_id = $1
     AND entry.calendar_date = $2::date
+    AND ($4::text IS NULL OR entry.teacher_id = $4)
     AND entry.event_status = 'scheduled'
     AND entry.weekday = EXTRACT(ISODOW FROM entry.calendar_date)::smallint
     AND entry.end_time > entry.start_time
@@ -73,10 +74,17 @@ const VALID_SCHEDULE_SQL = `
  */
 export async function prepareDailyFollowUpQueue(
   now: Date = new Date(),
+  schoolId?: string,
+  teacherId?: string,
 ): Promise<{ generated_at: string; schools: SchoolQueueResult[] }> {
-  const schoolResult = await pool.query<SchoolRow>(
-    "SELECT school_id, timezone FROM schools ORDER BY school_id",
-  );
+  const schoolResult = schoolId
+    ? await pool.query<SchoolRow>(
+        "SELECT school_id, timezone FROM schools WHERE school_id = $1 ORDER BY school_id",
+        [schoolId],
+      )
+    : await pool.query<SchoolRow>(
+        "SELECT school_id, timezone FROM schools ORDER BY school_id",
+      );
   if (schoolResult.rows.length === 0) {
     throw new Error("No schools are configured for follow-up scheduling");
   }
@@ -121,11 +129,44 @@ export async function prepareDailyFollowUpQueue(
       await prepareSchoolQueue(
         { ...school, timezone: school.timezone },
         localDate,
+        teacherId,
       ),
     );
   }
 
   return { generated_at: now.toISOString(), schools };
+}
+
+export interface DueFollowUp {
+  follow_up_job_id: string;
+  scheduled_date: string;
+  scheduled_end_at: Date;
+  status: string;
+}
+
+export async function listDueFollowUps(
+  teacherId: string,
+  schoolId: string,
+  now: Date = new Date(),
+  limit = 10,
+): Promise<DueFollowUp[]> {
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 20) {
+    throw new Error("Due follow-up limit must be between 1 and 20");
+  }
+
+  const result = await pool.query<DueFollowUp>(
+    `SELECT follow_up_job_id, scheduled_date::text, scheduled_end_at, status
+     FROM teacher_follow_up_jobs
+     WHERE teacher_id = $1
+       AND school_id = $2
+       AND status = 'queued'
+       AND scheduled_end_at <= $3
+     ORDER BY scheduled_end_at, follow_up_job_id
+     LIMIT $4`,
+    [teacherId, schoolId, now, limit],
+  );
+
+  return result.rows;
 }
 
 /**
@@ -134,6 +175,7 @@ export async function prepareDailyFollowUpQueue(
 async function prepareSchoolQueue(
   school: SchoolRow & { timezone: string },
   localDate: string,
+  teacherId?: string,
 ): Promise<SchoolQueueResult> {
   const client = await pool.connect();
   try {
@@ -176,8 +218,9 @@ async function prepareSchoolQueue(
              updated_at = NOW()
          WHERE school_id = $1
            AND scheduled_date = $2::date
+           AND ($3::text IS NULL OR teacher_id = $3)
            AND status = 'queued'`,
-        [school.school_id, localDate],
+        [school.school_id, localDate, teacherId ?? null],
       );
       await client.query("COMMIT");
       return {
@@ -191,7 +234,7 @@ async function prepareSchoolQueue(
 
     const candidates = await client.query<ScheduleCandidate>(
       VALID_SCHEDULE_SQL,
-      [school.school_id, localDate, school.timezone],
+      [school.school_id, localDate, school.timezone, teacherId ?? null],
     );
     const validEntryIds = candidates.rows.map(
       (candidate) => candidate.calendar_entry_id,
@@ -205,8 +248,9 @@ async function prepareSchoolQueue(
        WHERE school_id = $1
          AND scheduled_date = $2::date
          AND status = 'queued'
+         AND ($4::text IS NULL OR teacher_id = $4)
          AND NOT (calendar_entry_id = ANY($3::text[]))`,
-      [school.school_id, localDate, validEntryIds],
+      [school.school_id, localDate, validEntryIds, teacherId ?? null],
     );
 
     let refreshed = 0;
@@ -260,8 +304,9 @@ async function prepareSchoolQueue(
        FROM teacher_follow_up_jobs
        WHERE school_id = $1
          AND scheduled_date = $2::date
+         AND ($3::text IS NULL OR teacher_id = $3)
          AND status = 'queued'`,
-      [school.school_id, localDate],
+      [school.school_id, localDate, teacherId ?? null],
     );
 
     await client.query("COMMIT");

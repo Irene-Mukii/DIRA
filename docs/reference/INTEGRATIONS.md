@@ -88,6 +88,14 @@ Use the SMS API for short teacher-focused reminders if enabled. The message shou
 
 The older shared document refers to Twilio Voice, but the revised architecture selects Africa's Talking Voice. Use Africa's Talking for the current design unless the product owner explicitly changes that decision. Verify that the account supports the required outbound-call flow, audio/recording retrieval or IVR, webhook callbacks and local requirements before promising the basic-phone experience.
 
+The current integration decision is to use Africa's Talking Voice as an ordinary
+server-side API, not through Dira's MCP client. The public official Africa's Talking
+materials checked document API/SDK usage; no public first-party Voice MCP server was
+found. This is not proof that no private or unpublished MCP server exists. The
+official [Node.js SDK](https://github.com/AfricasTalkingLtd/africastalking-node.js)
+documents a `call` operation; use a genuine MCP server only if one is independently
+verified and deliberately selected.
+
 The server-side adapter uses the provider's official Node SDK request contract:
 `POST https://voice.africastalking.com/call` (or the sandbox host), URL-encoded
 `username`, `from`, `to`, and `clientRequestId`, with the `apikey` header. This

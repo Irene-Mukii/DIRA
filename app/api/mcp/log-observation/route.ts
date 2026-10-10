@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "../../../../lib/db/client";
+import { resolveTeacherContext } from "@/lib/auth/teacher-context";
 import { logObservation, ObservationError } from "../../../../lib/mcp-tools/logObservation";
 import {
   CAPTURE_METHODS,
   OBSERVATION_TYPES,
-  type LogObservationContext,
   type LogObservationInput,
   type ObservationRecord,
 } from "../../../../lib/db/schema";
@@ -19,15 +19,6 @@ type ObservationChatRow = Pick<
   | "teacher_review_status"
   | "created_at"
 >;
-
-function demoContext(): LogObservationContext | null {
-  if (process.env.NODE_ENV === "production") {
-    return null;
-  }
-  const teacher_id = process.env.DIRA_DEMO_TEACHER_ID?.trim();
-  const school_id = process.env.DIRA_DEMO_SCHOOL_ID?.trim();
-  return teacher_id && school_id ? { teacher_id, school_id } : null;
-}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -98,7 +89,7 @@ function parseInput(value: unknown): LogObservationInput {
 
 export async function POST(request: NextRequest) {
   try {
-    const context = demoContext();
+    const context = await resolveTeacherContext();
     if (!context) {
       return NextResponse.json(
         { error: "Observation submission requires an authenticated teacher context" },
@@ -143,15 +134,15 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const context = demoContext();
-  if (!context) {
-    return NextResponse.json(
-      { error: "Observation retrieval requires an authenticated teacher context" },
-      { status: 503 },
-    );
-  }
-
   try {
+    const context = await resolveTeacherContext();
+    if (!context) {
+      return NextResponse.json(
+        { error: "Observation retrieval requires a teacher context" },
+        { status: 503 },
+      );
+    }
+
     const result = await pool.query<ObservationChatRow>(
       `SELECT observation_id, original_observation, reviewed_observation,
               teacher_review_status, created_at

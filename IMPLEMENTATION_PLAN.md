@@ -44,8 +44,9 @@ recording and transcription phase can be omitted.
   Dira-ready transcript.
 - A calendar event can establish timing context only. It cannot prove that a lesson
   took place, that a learner attended, or that an observation is true.
-- Do not attach a call or transcript to a learner until the teacher is verified and
-  explicitly identifies/confirms the learner.
+- Do not attach a transcript to a learner until the demo teacher explicitly
+  identifies/confirms the learner. Production additionally requires the teacher's
+  identity to come from a verified authenticated session.
 - The existing observation workflow remains the persistence path. The teacher's
   original words, transcript, recording reference, and review status must remain
   distinguishable.
@@ -79,6 +80,8 @@ recording and transcription phase can be omitted.
 |---|---|---|
 | Teacher/class schedule model | **Implemented but not verified end-to-end** | `lib/db/dataset_schema.sql` defines recurring `timetable_assignments` and dated `school_calendar` periods with start/end times and teacher context. These can be the source for due jobs; verify the actual local database state before relying on it. |
 | Calendar MCP client | **Partially implemented** | `lib/agent/mcp-client.ts` provides a server-only Streamable HTTP client with OAuth-provider injection; `lib/external-mcp/calendar.ts` provides bounded, read-only Keeper tool adapters. Dira still has no OAuth callback/session persistence, and the hosted endpoint has not been reached or verified from this environment. |
+| Dira MCP server and scheduled agent | **Demo implementation added; pending runtime verification** | `/api/mcp/server` exposes the Dira tools over stateless Streamable HTTP with a server-side bearer token. `/api/internal/follow-up-agent` wakes a bounded agent that uses the Dira MCP client. A hosting scheduler is not selected or configured. |
+| GLM-5.3 model client | **Implemented; credentials still need configuration** | `lib/models.ts` calls the official Z.AI GLM-5.3 chat-completions API. `.env.example` documents an empty `ZAI_API_KEY`; no credential values were inspected or copied. |
 | Outbound voice | **Partially implemented** | `lib/external-mcp/voice.ts` submits a server-side Africa's Talking call request with bounded timeout and sanitized outcomes. Credentials/account capability and any live call remain unverified. |
 | Speech transcription | **Not implemented** | `lib/external-mcp/stt.ts` describes Whissle as MCP and its methods return empty strings. `lib/services/transcription.ts` supplies an interface/adapter pattern, not a provider integration. |
 | Observation persistence/review | **Text workflow implemented; review lifecycle partly implemented** | Reuses `log_observation`; separate voice-review state/history and teacher controls exist in development. Actual phone audio/transcription ingestion and production teacher authentication remain unimplemented. |
@@ -217,6 +220,227 @@ tests pass in the named environment.
   teacher authorization is connected. These are integration blockers, not passing
   tests.
 
+## Phase 6 — Complete the scheduled-call-to-reviewed-observation journey
+
+**Goal:** Complete and manually verify the agreed user journey: Dira prepares
+schedule-based follow-ups; a timer wakes Dira's bounded agent; the agent uses
+Dira's own MCP tools to inspect and progress eligible work; after class ends, an
+approved call is submitted; audio is transcribed using a verified service; the
+teacher identifies the learner and reviews the transcript; Dira saves exactly one
+observation and later shows truthful outcomes.
+
+This phase is deliberately gated. **Do not enable automatic or live calling** until
+the relevant database, consent, provider, callback, and destination controls have
+passed their preceding checks. The first end-to-end demo does not require a login
+system: a server-side demo identity resolver will consistently select one
+deterministic teacher record and will be replaceable with a verified-session
+resolver later. The demo must remain single-teacher and demo-destination gated.
+Africa's Talking is currently treated as an ordinary Voice API, not an MCP server. Public official
+Africa's Talking materials checked for this plan document Voice API/SDK usage; no
+public first-party Africa's Talking Voice MCP server was found. This is not proof
+that no private or unpublished server exists. The official Node SDK documents call
+submission through the Voice `/call` API. Route calls through Dira's server-side
+provider adapter unless a genuine first-party or third-party AT MCP server is
+independently verified and deliberately selected.
+
+Dira's own MCP server is a separate, Dira-owned surface: it exposes approved Dira
+capabilities as tools to connected MCP clients. The scheduled Dira agent will use
+Dira's MCP client to call that server, so queue preparation, due-work inspection,
+dispatch, and observation logging share the same validated tools. The MCP server
+and its tools must not make the LLM authoritative for time, eligibility, identity,
+idempotency, or call-safety decisions.
+
+### Phase 6.1 — Prepare and manually verify the development database
+
+**Likely files:** `db/002_follow_up_queue.sql`,
+`db/003_voice_call_lifecycle.sql`, `db/004_observation_teacher_review.sql`,
+`compose.yaml`, `IMPLEMENTATION_PLAN.md`.
+
+- Confirm the target database and take a recoverable backup/snapshot before
+  migration. Do not delete or recreate the existing Docker volume as a migration
+  shortcut.
+- Apply the additive migrations in order: Phase 2 queue, Phase 3 call lifecycle,
+  then Phase 4 teacher-review lifecycle. Compose initialization mounts do not apply
+  migrations to an already-initialized PostgreSQL volume.
+- Verify required schema versions, school timezone, dated schedule entries,
+  confirmed closure coverage, and closure dates using synthetic/demo data.
+- Rehearse the protected queue endpoint manually. Confirm it queues eligible
+  weekday/non-holiday periods once, and blocks with a visible explanation when
+  timezone or closure coverage is missing.
+- Rehearse the protected dispatch endpoint with provider submission mocked first.
+  Confirm it cannot claim before the scheduled end, claims at most one eligible
+  job per request, respects the demo destination gate, and records accepted,
+  rejected, and unknown outcomes accurately.
+- Keep provider credentials and scheduler secrets in ignored local environment
+  configuration. Never paste or log their values.
+
+**Gate:** Do not proceed to automatic dispatch until migrations and the manual
+queue/dispatch checks pass. No migration is applied by this plan.
+
+### Phase 6.2 — Add a bounded Dira MCP server and scheduled agent
+
+**Dependencies:** Phase 6.1; verify the existing model configuration contract from
+tracked environment examples and server-side model code before wiring the agent.
+
+- Implement Dira's MCP server surface and expose the relevant existing capabilities
+  as typed, validated tools, including queue preparation, due-follow-up inspection,
+  one-job dispatch, and `log_observation`. Reuse the existing service/tool
+  implementations; do not duplicate schedule, dispatch, or observation rules in
+  MCP handlers.
+- Define and document each tool's input/output schema, server-side authorization,
+  error behavior, and idempotency. Keep call dispatch behind existing demo-mode,
+  destination, schedule, and atomic-claim checks. Do not expose provider credentials
+  or allow a caller to select an arbitrary recipient.
+- Protect the deployed demo MCP endpoint with its own server-side bearer credential;
+  never ship that credential to browser code. This shared demo credential is not
+  production-grade per-user authentication or multi-school authorization.
+- Add a bounded agent loop that uses Dira's MCP client to connect to Dira's own MCP
+  server, discovers the permitted tools, requests the next action, and incorporates
+  tool results. The agent may coordinate and report; Dira code remains authoritative
+  for dates, closures, eligibility, conflicts, deduplication, teacher context, and
+  dispatch safety.
+- Use the project's intended GLM-5.3 hosted model configuration. Inspect only
+  tracked `.env.example`/configuration documentation and model-provider code to
+  determine variable names and base URL/model settings; never copy, print, log, or
+  commit values from `.env` or `.env.local`. Add safe empty placeholders and clear
+  setup guidance to `.env.example` only if required. Missing credentials or model
+  configuration must produce a visible error; do not silently use another model.
+- The queue-preparation scheduler trigger wakes the Dira agent at 7:00 a.m. on
+  eligible weekdays; a separate bounded due-dispatch trigger wakes it at/after class
+  end times. Neither trigger runs queue/dispatch business logic directly. Each sends
+  only its event kind and time context; the agent uses MCP tools to prepare the
+  queue or inspect and request dispatch of due work. A timer does not make the LLM
+  responsible for keeping time or deciding authoritative eligibility.
+- Choose the smallest hosting-compatible trigger supported by the deployment. Keep
+  the trigger authenticated and idempotent, with non-overlap, bounded execution,
+  monitoring, and alerting. The trigger may invoke a protected Dira agent-run route;
+  that route must start the agent and return a truthful run result.
+- Keep the demo teacher selection behind one server-side identity-resolver
+  interface. Its demo implementation deterministically selects the first recorded
+  teacher using an explicit stable ordering and fails visibly if none exists.
+  Never trust a teacher ID supplied by the model, MCP caller, or browser. Later
+  authentication should replace the resolver implementation rather than require
+  changing each tool, service, and page.
+- The scheduled agent may use queue-preparation, due-inspection, and dispatch tools,
+  but must not use `log_observation` to invent a transcript. Observation logging is
+  available only when actual teacher-provided content and an explicitly selected
+  learner are supplied.
+- Do not implement production login/contact verification as part of this demo slice.
+  Use the deterministic first-teacher demo resolver and approved demo call number.
+  Preserve recording notice/consent and privacy safeguards before any recording;
+  a fixed demo identity is not proof of a real person's identity or consent.
+
+**Gate:** Demonstrate a scheduler-triggered agent run using GLM-5.3, Dira's MCP
+client, and Dira's own tools against a no-call/mock provider.
+Prove that it can prepare work, inspect results, request a guarded dispatch, report
+tool failures honestly, and cannot create duplicate jobs or bypass server-side
+eligibility. Only then enable a controlled test call after applicable consent and
+provider capability checks pass.
+
+### Phase 6.3 — Verify Africa's Talking Voice lifecycle callbacks
+
+**Dependencies:** Africa's Talking account capability and current callback/security
+documentation verified; Phase 6.2 tool authorization and demo call-safety controls.
+
+- Confirm account-side support for the outbound request, voice response URL, status
+  callbacks, and the sandbox/test destination. The currently implemented `voice.ts`
+  submits the direct Voice API request; it records provider request acceptance
+  only.
+- Configure a public HTTPS callback endpoint with the exact callback semantics,
+  request method, fields, and authentication or verification mechanism supported by
+  the account. Do not assume a signing-header format or undocumented parameters.
+- Model and persist only states supported by provider/application evidence, such as
+  initiated, ringing, answered, no-answer/busy, completed, or failed. Keep
+  `provider_accepted` distinct from all call-progress and final outcomes.
+- Validate callback source/authentication, schema, provider request/call ID,
+  allowed state transitions, timestamps, duplicate delivery, and replay. Make each
+  callback idempotent and reject unrelated or mismatched IDs.
+- Ensure retries are limited to explicitly known retryable states; an unknown
+  provider result must be reconciled rather than blindly sent again.
+- Test callback failures and malformed/forged/duplicate callbacks with fixtures.
+  Show final call results to the assigned teacher only after successful
+  authorization.
+
+**Gate:** Do not display missed, answered, or completed states until a controlled
+provider test confirms the corresponding authenticated callback in the deployed
+environment.
+
+### Phase 6.4 — Capture audio and verify Whissle transcription
+
+**Dependencies:** verified recording/audio capability and callback flow in Phase
+6.3; approved consent and retention policy.
+
+- Establish from Africa's Talking's actual account/documentation how the voice flow
+  records audio, obtains the recording reference or audio, signals recording
+  completion, and secures retrieval. Do not infer a recording from a completed
+  call.
+- Verify Whissle's actual API, endpoint, authentication, audio formats and limits,
+  response schema, error behavior, and retention terms against official/account
+  documentation. The current `lib/external-mcp/stt.ts` is a placeholder and returns
+  empty strings; do not send real audio to it or describe it as a working MCP.
+- If either provider does not support the needed capability, stop and agree a
+  provider-compatible alternate capture/transcription design before implementation.
+- Implement a server-side, size/duration-limited audio handoff. Keep the recording
+  reference separate from transcript text; restrict access, avoid ordinary logs,
+  and apply the approved retention/deletion policy.
+- Persist transcription lifecycle and safe errors. Empty, invalid, timed-out, or
+  unsupported audio must not create an observation or a fabricated transcript.
+- Preserve the original transcript and any provider metadata actually returned;
+  never invent confidence scores or learner identity.
+
+**Gate:** Verify a test recording and a real Whissle test transcript/error response
+using synthetic or explicitly consented test audio before connecting the flow to
+learner records.
+
+### Phase 6.5 — Join transcript review to the existing observation path
+
+**Dependencies:** Phase 6.2 tool wiring and Phases 6.3–6.4.
+
+- Associate audio/transcript first with the server-resolved demo teacher and call
+  attempt, not a learner inferred from caller ID, timetable, or automatic name
+  matching. In production, the same boundary will resolve the verified teacher
+  from the authenticated session.
+- Require the teacher to explicitly select/confirm the learner for each observation.
+  If identity is unclear, retain it as an unlinked follow-up for the teacher; do not
+  force an observation row because the current `log_observation` input requires a
+  learner ID.
+- Pass an explicitly confirmed learner, original transcript, phone-capture
+  provenance, permitted recording reference, and deterministic call/recording
+  submission ID through the existing `log_observation` persistence path. Do not
+  add a parallel observation write path.
+- Save only usable, attributable transcripts as `recorded`. Keep the original
+  transcript separate from a teacher edit; preserve the existing review history and
+  `recorded` -> `confirmed`/`updated` transitions.
+- Show the teacher clear call status and next action in Follow-up Activity, and
+  route pending review to the correct learner record. Keep call outcome, transcription
+  status, teacher-review status, and evidence verification status separate.
+
+### Phase 6.6 — End-to-end manual acceptance and operational handoff
+
+- With synthetic schedule data, manually demonstrate: scheduler trigger -> bounded
+  GLM-powered Dira agent -> Dira MCP client -> Dira MCP server tools -> queue
+  preparation and inspection -> class-end eligibility -> single guarded dispatch ->
+  provider request -> verified callback -> deterministic demo-teacher context and
+  consent -> recording -> transcription -> explicit learner confirmation -> exactly
+  one `recorded` observation -> teacher confirmation or edit -> status visible in the
+  demo teacher context.
+- Repeat with weekend/holiday, cancelled or changed schedule, early dispatch,
+  overlapping class, scheduler duplication, provider rejection, unknown provider
+  result, missed call, teacher refusal, invalid callback, callback replay, recording
+  failure, Whissle timeout/empty response, unclear learner, duplicate transcript,
+  unauthorized MCP caller, and database outage.
+- Verify no failure path creates fake success, a guessed learner link, or a duplicate
+  call/observation. Verify no audio, transcript, phone number, credential, or
+  unnecessary learner text appears in logs.
+- Record environment, migration versions, code revision, expected/actual outcomes,
+  and unresolved blockers in the evaluation record. Mark each integration as
+  selected/configured/smoke-tested/end-to-end-tested only when its own evidence
+  supports that status.
+- Do not claim the demo journey works if any required provider capability, demo
+  identity resolution, consent, scheduler-to-agent trigger, MCP tool, or callback
+  step remains blocked. Production login and multi-teacher authorization remain
+  explicitly deferred and must not be implied by a successful single-teacher demo.
+
 ## Should Dira write school periods to teachers' work calendars?
 
 **Recommendation: not for the call-scheduling MVP.** Dira already has recurring
@@ -241,11 +465,14 @@ until discovered and verified.
    teacher's `timetable_assignments` and school/class records. The school timezone
    must be configured or otherwise reliably available; the current schedule columns
    store local date and clock times, not an explicit timezone.
-2. A daily scheduler runs at 7:00 a.m. in the school's timezone on weekdays, checks
-   the school's holiday/closure data, and queues eligible calls for that day's dated
-   class periods. The actual call job is due at each assigned class's end (for an
-   8:00–9:00 lesson, at 9:00). Weekend and holiday dates produce no call jobs. A
-   calendar event need not be copied into the teacher's work email for this
+2. A queue-preparation scheduler trigger alerts Dira's agent at 7:00 a.m. on
+   eligible weekdays. A separate due-dispatch trigger alerts it at/after class end
+   times. The agent uses Dira's MCP client to call Dira's MCP server tools; neither
+   trigger invokes queue or dispatch business logic directly. The queue-preparation
+   tool reads the school's holiday/closure data and queues eligible calls for that
+   day's dated class periods. The actual call job is due at each assigned class's
+   end (for an 8:00–9:00 lesson, at 9:00). Weekend and holiday dates produce no call
+   jobs. A calendar event need not be copied into the teacher's work email for this
    database-backed queue to operate.
 3. If product policy requires avoiding personal appointments or other calendar
     conflicts, Dira may make a bounded, read-only Keeper MCP request for the teacher's
@@ -261,26 +488,32 @@ until discovered and verified.
 5. The server-side Africa's Talking adapter places the call and records the provider
     request/call ID and real status. Webhooks are authenticated/validated and update
     the same call attempt idempotently.
-6. The call explains its purpose and recording/transcription practices, verifies the
-    teacher using the approved authentication method, and obtains any required
-    recording consent before recording. It opens with: “Hello teacher, please share
+6. For the single-teacher demo, server-side code resolves the demo teacher
+    deterministically; no login or claim of real identity verification is made. The
+    call explains its purpose and recording/transcription practices and obtains any
+    required recording consent before recording. Production will replace that
+    resolver with identity from a verified authenticated session. It opens with:
+    “Hello teacher, please share
     remarks you have for one or more of your focus group of the week. Make sure to
     state the name of the child you are talking about before each of their
-    observations. You may begin.” If verification or consent fails, do not record or
-    save learner observations.
+    observations. You may begin.” If consent is refused, do not record or save
+    learner observations.
 7. If provider capabilities permit audio retrieval/recording, Dira securely obtains
     the audio and submits it to Whissle using Whissle's documented audio contract.
     Dira presents the transcript to the teacher for review; uncertainty about learner
     identity, negation, numbers, or material facts requires correction/confirmation.
-8. Dira resolves and validates each named learner against the verified teacher's
-    authorised focus group. It saves a usable, attributable transcript through the
+8. Dira resolves and validates each named learner against the demo teacher's
+    authorised focus group (and, in production, the authenticated teacher's focus
+    group). It saves a usable, attributable transcript through the
     existing observation persistence path with trusted teacher context, phone capture
     provenance, transcript/recording references where permitted, and an idempotency
     key. The observation is marked `recorded` (saved but awaiting teacher review).
     Identity ambiguity or material transcription uncertainty is not silently guessed
     or presented as confirmed; keep it unlinked/in review until clarified.
-9. On a later login, the teacher sees the call outcome (for example, rejected, missed,
-    completed, or awaiting transcript review) in their own chat/activity history.
+9. In the demo, the fixed demo teacher context sees the call outcome (for example,
+    rejected, missed, completed, or awaiting transcript review) in Follow-up Activity.
+    In production, an authenticated teacher will see only their own history after
+    login.
     Newly saved phone observations appear as compact entries marked `recorded`, with
     small confirm and edit icon actions. On `/learners/[id]`, the teacher can use
     fuller review controls, select an observation type, and optionally link the
@@ -658,6 +891,7 @@ actual configuration names are implemented.
 | 4 | P0 | Phase 3: safe outbound call | Places a real controlled call and handles provider lifecycle truthfully. |
 | 5 | P1 | Phase 4: transcription and observation save | Connects phone audio to the already working teacher-reviewed persistence path. |
 | 6 | P1 | Phase 5: UI, operations, and full verification | Makes the complete workflow testable, supportable, and demonstrable. |
+| 7 | P1 | Phase 6.2: Dira MCP server, agent, and scheduler trigger | Connects reusable Dira tools to the scheduled agent while keeping the timer and LLM out of authoritative scheduling and safety decisions. |
 
 ## Decisions/blockers to close before implementation
 
@@ -668,14 +902,17 @@ actual configuration names are implemented.
 3. Confirm the school timezone, 7:00 a.m. weekday queue run, authoritative holiday
    source, whether to call exactly at the scheduled end or after a short agreed
    buffer, allowable hours, and overlapping-class behavior.
-4. Confirm teacher verification, recording consent, opt-out, call limits, retry
-   policy, and recording/transcript retention.
+4. Use a deterministic server-side demo teacher resolver for the first single-teacher
+   flow; defer production login, contact verification, and multi-teacher access
+   control. Confirm recording consent, opt-out, call limits, retry policy, and
+   recording/transcript retention before any controlled recording.
 5. Verify the actual Keeper, Africa's Talking Voice, and Whissle accounts and their
    current product/API capabilities. If any capability is unavailable, mark that
    phase **BLOCKED** and agree a safe alternative before coding.
-6. Select the production scheduler/worker only after confirming the actual hosting
-   target and its execution guarantees. A local-only timer is not sufficient for
-   production.
+6. Select a hosting-compatible timer/trigger after confirming the actual deployment.
+   It must wake the Dira agent, which uses Dira's MCP client and server tools; it
+   must not call queue/dispatch business logic directly. A local-only timer is not
+   sufficient for production.
 7. Confirm the focus-group-of-the-week roster source and the review-status
    persistence/audit fields. The current observation schema's `verification_status`
    must not be overloaded to represent teacher review.
@@ -717,6 +954,9 @@ actual configuration names are implemented.
   visibility becomes a requirement, plan a separate one-way sync with PostgreSQL
   remaining authoritative.
 - No assumption that Africa's Talking or Whissle is an MCP server.
-- No calls to real teachers until account capability, authentication, consent, and a
-  controlled test procedure are explicitly approved.
+- No calls to real teachers as part of the demo. A single controlled call may use
+  only the explicitly configured demo destination after account capability,
+  recording notice/consent, and a test procedure are explicitly approved. Production
+  multi-teacher calling remains blocked on authentication, verified contacts, and
+  access controls.
 - No implementation work is authorized by this plan alone.

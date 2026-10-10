@@ -3,6 +3,7 @@ import { connection } from "next/server";
 import Card from "@/components/ui/Card";
 import ObservationChat from "@/components/observations/ObservationChat";
 import { pool } from "@/lib/db/client";
+import { resolveTeacherContext } from "@/lib/auth/teacher-context";
 
 interface LearnerForObservation {
   learner_id: string;
@@ -35,19 +36,22 @@ export default async function LogObservationPage({
   await connection();
   const { learnerId } = await params;
 
-  if (process.env.NODE_ENV === "production") {
+  if (
+    process.env.NODE_ENV === "production" &&
+    process.env.DIRA_DEMO_MODE !== "true"
+  ) {
     return unavailable(
       "Observation logging requires an authenticated teacher session, which is not configured.",
       learnerId,
     );
   }
 
-  const schoolId = process.env.DIRA_DEMO_SCHOOL_ID?.trim();
-  if (!schoolId) {
-    return unavailable("Configure the development school context before logging observations.", learnerId);
-  }
-
   try {
+    const context = await resolveTeacherContext();
+    if (!context) {
+      return unavailable("Add a teacher record before logging observations.", learnerId);
+    }
+
     const result = await pool.query<LearnerForObservation>(
       `SELECT
          l.learner_id,
@@ -68,7 +72,7 @@ export default async function LogObservationPage({
          AND (e.enrolled_to IS NULL OR e.enrolled_to >= CURRENT_DATE)
        ORDER BY e.academic_year DESC
        LIMIT 1`,
-      [learnerId, schoolId],
+      [learnerId, context.school_id],
     );
     const learner = result.rows[0];
 

@@ -2,6 +2,7 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 import { pool } from "@/lib/db/client";
+import type { LogObservationContext } from "@/lib/db/schema";
 import {
   AfricaTalkingCallError,
   initiateAfricaTalkingCall,
@@ -34,9 +35,10 @@ export interface FollowUpDispatchResult {
  */
 export async function dispatchOneDueFollowUp(
   now: Date = new Date(),
+  teacherContext?: LogObservationContext,
 ): Promise<FollowUpDispatchResult | null> {
   const config = getVoiceConfiguration();
-  const claimed = await claimDueFollowUp(now);
+  const claimed = await claimDueFollowUp(now, teacherContext);
   if (!claimed) {
     return null;
   }
@@ -134,6 +136,7 @@ function getVoiceConfiguration(): VoiceConfiguration {
  */
 async function claimDueFollowUp(
   now: Date,
+  teacherContext?: LogObservationContext,
 ): Promise<ClaimedCall | null> {
   const client = await pool.connect();
   try {
@@ -165,6 +168,8 @@ async function claimDueFollowUp(
           AND (assignment.valid_to IS NULL OR assignment.valid_to >= entry.calendar_date)
          WHERE job.status = 'queued'
            AND job.scheduled_end_at <= $1
+           AND ($3::text IS NULL OR job.teacher_id = $3)
+           AND ($4::text IS NULL OR job.school_id = $4)
            AND school.timezone IS NOT NULL
            AND job.scheduled_date =
              ($1 AT TIME ZONE school.timezone)::date
@@ -221,7 +226,7 @@ async function claimDueFollowUp(
        WHERE job.follow_up_job_id = eligible.follow_up_job_id
        RETURNING job.follow_up_job_id, job.teacher_id,
                  job.provider_request_id::text AS provider_request_id`,
-      [now, requestId],
+      [now, requestId, teacherContext?.teacher_id ?? null, teacherContext?.school_id ?? null],
     );
 
     await client.query("COMMIT");

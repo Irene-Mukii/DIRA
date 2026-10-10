@@ -1,16 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
+import { resolveTeacherContext } from "@/lib/auth/teacher-context";
 import { OBSERVATION_TYPES, type ReviewObservationInput } from "@/lib/db/schema";
 import { ObservationError } from "@/lib/mcp-tools/logObservation";
 import { reviewObservation } from "@/lib/services/observation-review";
 
 export const runtime = "nodejs";
-
-function demoContext() {
-  if (process.env.NODE_ENV === "production") return null;
-  const teacher_id = process.env.DIRA_DEMO_TEACHER_ID?.trim();
-  const school_id = process.env.DIRA_DEMO_SCHOOL_ID?.trim();
-  return teacher_id && school_id ? { teacher_id, school_id } : null;
-}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -61,15 +55,15 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ observationId: string }> },
 ) {
-  const context = demoContext();
-  if (!context) {
-    return NextResponse.json(
-      { error: "Observation review requires an authenticated teacher context" },
-      { status: 503 },
-    );
-  }
-
   try {
+    const context = await resolveTeacherContext();
+    if (!context) {
+      return NextResponse.json(
+        { error: "Observation review requires a teacher context" },
+        { status: 503 },
+      );
+    }
+
     const body: unknown = await request.json().catch(() => undefined);
     if (body === undefined) {
       return NextResponse.json({ error: "Request body must be valid JSON" }, { status: 400 });

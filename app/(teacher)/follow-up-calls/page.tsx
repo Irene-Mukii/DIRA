@@ -3,6 +3,7 @@ import { connection } from "next/server";
 import Badge from "@/components/ui/Badge";
 import Card from "@/components/ui/Card";
 import { pool } from "@/lib/db/client";
+import { resolveTeacherContext } from "@/lib/auth/teacher-context";
 
 interface FollowUpCallRow {
   follow_up_job_id: string;
@@ -84,7 +85,10 @@ function safeErrorLabel(code: string | null): string | null {
 export default async function FollowUpCallsPage() {
   await connection();
 
-  if (process.env.NODE_ENV === "production") {
+  if (
+    process.env.NODE_ENV === "production" &&
+    process.env.DIRA_DEMO_MODE !== "true"
+  ) {
     return (
       <Card className="p-6">
         <h1 className="text-xl font-semibold">Follow-up activity unavailable</h1>
@@ -95,20 +99,20 @@ export default async function FollowUpCallsPage() {
     );
   }
 
-  const teacherId = process.env.DIRA_DEMO_TEACHER_ID?.trim();
-  const schoolId = process.env.DIRA_DEMO_SCHOOL_ID?.trim();
-  if (!teacherId || !schoolId) {
-    return (
-      <Card className="p-6">
-        <h1 className="text-xl font-semibold">Follow-up activity unavailable</h1>
-        <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
-          Configure the development teacher and school context before viewing follow-up activity.
-        </p>
-      </Card>
-    );
-  }
-
   try {
+    const context = await resolveTeacherContext();
+    if (!context) {
+      return (
+        <Card className="p-6">
+          <h1 className="text-xl font-semibold">Follow-up activity unavailable</h1>
+          <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
+            Add a teacher record before viewing the single-teacher demo.
+          </p>
+        </Card>
+      );
+    }
+    const { teacher_id: teacherId, school_id: schoolId } = context;
+
     const [teacherResult, callsResult, observationsResult] = await Promise.all([
       pool.query<{ display_name: string }>(
         `SELECT display_name FROM teachers
@@ -156,7 +160,7 @@ export default async function FollowUpCallsPage() {
         <Card className="p-6">
           <h1 className="text-xl font-semibold">Follow-up activity unavailable</h1>
           <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
-            The configured development teacher is not registered for this school.
+            The first recorded teacher is not registered for the selected school.
           </p>
         </Card>
       );
@@ -188,7 +192,7 @@ export default async function FollowUpCallsPage() {
             Call requests and observations awaiting review for {teacherResult.rows[0].display_name}.
           </p>
           <p className="mt-2 text-xs text-amber-800 dark:text-amber-300">
-            Development demo view: the configured teacher ID is not a sign-in session.
+            Single-teacher demo view: this first-recorded teacher context is not a sign-in session.
           </p>
         </header>
 

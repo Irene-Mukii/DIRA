@@ -25,10 +25,12 @@ Dira supports teachers in collecting and reviewing evidence about learners over 
 |---|---|---|---|
 | Web application | Next.js App Router + React + TypeScript | Pages, layouts, UI, and server-side application routes | Dira code; repository structure exists |
 | Styling | Global CSS and reusable UI components | Responsive desktop/mobile presentation and shared visual language | Dira code |
-| Model | GLM-5.3 through a hosted API | Reason over relevant context and propose appropriate next actions | External hosted model; provider and API configuration must be confirmed |
+| Model | GLM-5.3 through the Z.AI chat-completions API | Reason over bounded workflow context and select permitted tools | Server adapter implemented; `ZAI_API_KEY` must be configured and live execution remains unverified |
 | Model abstraction | `lib/models.ts` | Keep provider/model configuration replaceable and server-side | Dira code |
 | Agent orchestration | `lib/agent/orchestrator.ts` | Decide which agent action to run and coordinate the workflow | Dira code |
 | MCP client | `lib/agent/mcp-client.ts` | Streamable HTTP transport through the official MCP SDK, OAuth-provider injection, tool discovery/invocation, request timeouts, and error propagation | Client foundation implemented; secure OAuth session/token persistence and live Keeper verification remain |
+| Dira MCP server | `app/api/mcp/server/route.ts` + `lib/mcp-tools/dira-server.ts` | Expose Dira observation and scheduled-call capabilities to authorized MCP clients | Stateless Streamable HTTP demo endpoint implemented with a shared bearer token; not production-grade user authorization |
+| Scheduled agent trigger | `app/api/internal/follow-up-agent/route.ts` + `lib/agent/orchestrator.ts` | Wake a bounded GLM agent that uses Dira's MCP client to inspect, prepare, and dispatch follow-up work | Agent and protected trigger implemented; hosting scheduler is not selected/configured |
 | Dira MCP tool: observation | `lib/mcp-tools/logObservation.ts` | Validate and persist a teacher observation through the approved tool workflow | Dira-owned tool |
 | Dira MCP tool: test suggestion | `lib/mcp-tools/suggestTest.ts` | Propose a small, practical classroom test grounded in learner evidence | Dira-owned tool |
 | Evidence summary | `lib/mcp-tools/draftPathwayNote.ts` (existing filename) | Build the evidence-grounded content used by the Learner Evidence Card; must not assign a pathway or produce a learner verdict | Dira-owned capability; filename is legacy and can be renamed later |
@@ -58,7 +60,11 @@ Dira supports teachers in collecting and reviewing evidence about learners over 
 **Built for Dira**
 - Teacher-facing pages and reusable components.
 - Agent orchestration, model abstraction, MCP client, and activity logging.
-- Dira's own MCP tools: `log_observation`, `suggest_test`, and the evidence-summary capability.
+- Dira's own MCP tools: `log_observation`, `prepare_daily_follow_up_queue`,
+  `list_due_follow_ups`, and `dispatch_one_due_follow_up`. Scheduled runs cannot
+  call `log_observation`; model-generated remarks are not valid observation evidence.
+- `suggest_test` and evidence-summary capabilities exist in Dira, but are not tools
+  on the deployed Dira MCP endpoint yet.
 - Database schema, application validation, test lifecycle, and evidence-card assembly.
 
 **External/borrowed services and MCP**
