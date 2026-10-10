@@ -5,6 +5,7 @@
 CREATE TABLE schools (
     school_id TEXT PRIMARY KEY,
     school_name TEXT NOT NULL,
+    timezone TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -102,6 +103,9 @@ CREATE TABLE school_calendar (
     planned_activity TEXT,
     event_name TEXT,
     event_type TEXT,
+    event_status TEXT NOT NULL DEFAULT 'scheduled' CHECK (
+        event_status IN ('scheduled', 'cancelled')
+    ),
     UNIQUE (calendar_date, class_id, period_number),
     UNIQUE (calendar_entry_id, calendar_date, class_id, academic_year),
     FOREIGN KEY (class_id, school_id, academic_year)
@@ -129,6 +133,46 @@ CREATE INDEX idx_school_calendar_teacher_period
     ON school_calendar (teacher_id, calendar_date, period_number);
 CREATE INDEX idx_school_calendar_class_date
     ON school_calendar (class_id, calendar_date, period_number);
+
+CREATE TABLE school_closure_coverage (
+    coverage_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    school_id TEXT NOT NULL REFERENCES schools(school_id),
+    coverage_start DATE NOT NULL,
+    coverage_end DATE NOT NULL,
+    confirmed_at TIMESTAMPTZ NOT NULL,
+    UNIQUE (school_id, coverage_start, coverage_end),
+    CHECK (coverage_end >= coverage_start)
+);
+
+CREATE TABLE school_closures (
+    school_id TEXT NOT NULL REFERENCES schools(school_id),
+    closure_date DATE NOT NULL,
+    closure_name TEXT NOT NULL CHECK (length(trim(closure_name)) > 0),
+    PRIMARY KEY (school_id, closure_date)
+);
+
+CREATE TABLE teacher_follow_up_jobs (
+    follow_up_job_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    calendar_entry_id TEXT NOT NULL UNIQUE
+        REFERENCES school_calendar(calendar_entry_id),
+    school_id TEXT NOT NULL REFERENCES schools(school_id),
+    class_id TEXT NOT NULL REFERENCES classes(class_id),
+    teacher_id TEXT NOT NULL REFERENCES teachers(teacher_id),
+    scheduled_date DATE NOT NULL,
+    scheduled_end_at TIMESTAMPTZ NOT NULL,
+    idempotency_key TEXT NOT NULL UNIQUE,
+    status TEXT NOT NULL DEFAULT 'queued' CHECK (
+        status IN ('queued', 'cancelled')
+    ),
+    cancel_reason TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_teacher_follow_up_jobs_due
+    ON teacher_follow_up_jobs (status, scheduled_end_at);
+CREATE INDEX idx_teacher_follow_up_jobs_teacher
+    ON teacher_follow_up_jobs (teacher_id, scheduled_date);
 
 CREATE TABLE observations (
     observation_id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,

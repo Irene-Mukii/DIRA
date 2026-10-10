@@ -82,7 +82,7 @@ recording and transcription phase can be omitted.
 | Outbound voice | **Not implemented** | `lib/external-mcp/voice.ts` describes a Twilio Voice MCP wrapper, which conflicts with the revised Africa's Talking decision and is not a working provider adapter. |
 | Speech transcription | **Not implemented** | `lib/external-mcp/stt.ts` describes Whissle as MCP and its methods return empty strings. `lib/services/transcription.ts` supplies an interface/adapter pattern, not a provider integration. |
 | Observation persistence | **Implemented in the text workflow; phone path not implemented** | Reuse the existing `log_observation` capability and the working text-observation flow. Phone-originated audio/transcripts still need validation, review, provenance, and idempotency wiring. |
-| Call lifecycle and scheduler | **Not implemented** | No durable call-attempt lifecycle or demonstrated end-of-class trigger is identified. A model is not a continuously running scheduler. |
+| Call lifecycle and scheduler | **Partially implemented** | A protected daily queue trigger and durable idempotent schedule-job records now exist. No external scheduler is configured, jobs have not been verified against the active database, and no phone call is dispatched. |
 
 “Selected” providers and schema definitions do not mean the integration has been
 configured or successfully executed. Promote each status only after its acceptance
@@ -101,8 +101,8 @@ tests pass in the named environment.
   hard destination gate before any provider call can use this setting.
 - **Still blocked in Phase 0:** no Keeper OAuth session/calendar is configured in
   Dira; no live Africa's Talking or Whissle account capability has been verified;
-  the schema has no explicit school holiday/closure table; and school timezone must
-  be configured or modelled. No live calls or authenticated calendar requests were
+  the new timezone and closure structures still need authoritative values configured
+  for the development school. No live calls or authenticated calendar requests were
   made.
 - **Phase 1 — client foundation implemented, end-to-end verification blocked:** the
   official MCP SDK dependency, server-only Streamable HTTP client, OAuth-provider
@@ -116,6 +116,28 @@ tests pass in the named environment.
   plain `.env.local` or share one teacher's calendar credentials across teachers.
   A real authenticated MCP invocation remains pending a secure authorization/session
   design and a non-sensitive test calendar.
+
+## Phase 2 implementation status (10 October 2026)
+
+- **Queue foundation implemented; operational verification pending:**
+  `lib/services/follow-up-queue.ts` resolves today's local date per school, skips
+  weekends, requires confirmed closure-calendar coverage, validates dated periods
+  against recurring teacher assignments, rejects overlapping periods, and
+  transactionally upserts idempotent queue rows.
+- `db/002_follow_up_queue.sql` is an additive migration for existing development
+  databases; `lib/db/dataset_schema.sql` includes the same structures for a fresh
+  database. The migration has not been applied to the active Docker database.
+- `POST /api/internal/follow-up-queue` is a bearer-secret-protected manual/cron
+  trigger. A hosting scheduler still needs to invoke it daily at 7:00 a.m. in the
+  school's timezone. No production scheduler is configured by this code change.
+- A school without a valid timezone or confirmed closure coverage is explicitly
+  reported as blocked; the queue does not guess that a school is open. Configure
+  `schools.timezone`, populate `school_closures`, and confirm coverage in
+  `school_closure_coverage` before expecting queue rows.
+- The queue stores eligibility and scheduled class-end time only. It does not call
+  teachers, persist provider call outcomes, or enforce the demo destination; those
+  remain Phase 3 work. Keeper availability is not queried because PostgreSQL is the
+  authoritative class schedule and no work-calendar conflict policy was approved.
 
 ## Should Dira write school periods to teachers' work calendars?
 
@@ -350,8 +372,9 @@ server-side scheduler/worker entry point.
   scheduler delivery, service downtime, concurrent jobs, and an already active
   subsequent class.
 
-**Dependencies:** Phase 0 schedule-authority/timezone decisions; Phase 1 real Keeper
-MCP read.
+**Dependencies:** Phase 0 schedule-authority/timezone decisions. A live Keeper read
+is required only if the product adopts Keeper availability checks; it is not required
+for queueing from PostgreSQL.
 
 **Acceptance criteria**
 

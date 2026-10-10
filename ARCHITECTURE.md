@@ -152,6 +152,8 @@ flowchart TB
     subgraph APP["Next.js application backend — built by our team"]
         ROUTES[App Router pages and route handlers]
         AUTH[Authentication / authorisation and request validation]
+        QUEUE[Follow-up queue service]
+        CRON[Protected queue trigger; hosting scheduler not configured]
         ORCH[Agent orchestrator]
         MODEL[Model abstraction: lib/models.ts]
         CLIENT[MCP client: discover, invoke, validate, trace]
@@ -168,6 +170,7 @@ flowchart TB
     subgraph DATA["Dira data store"]
         PG[(PostgreSQL)]
         RECORDS[Learners, observations, questions, tests, outcomes, evidence references]
+        QUEUE_RECORDS[Closure coverage, closure dates, follow-up queue jobs]
     end
 
     subgraph EXT["External services — borrowed"]
@@ -186,6 +189,9 @@ flowchart TB
     TT --> ROUTES
     EC --> ROUTES
     ROUTES --> AUTH
+    CRON --> ROUTES
+    ROUTES --> QUEUE
+    QUEUE --> PG
     AUTH --> DBACCESS
     DBACCESS <--> PG
     AUTH --> ORCH
@@ -211,6 +217,7 @@ flowchart TB
     ORCH --> ATVOICE
     ATVOICE --> WHISSLE
     PG --- RECORDS
+    PG --- QUEUE_RECORDS
 ```
 
 **Diagram notes**
@@ -237,6 +244,9 @@ erDiagram
     schools ||--o{ teachers : has
     schools ||--o{ classes : contains
     schools ||--o{ learner_enrollments : scopes
+    schools ||--o{ school_closure_coverage : confirms
+    schools ||--o{ school_closures : closes_on
+    schools ||--o{ teacher_follow_up_jobs : queues
     learners ||--o{ learner_enrollments : enrolls
     classes ||--o{ learner_enrollments : groups
 
@@ -245,6 +255,7 @@ erDiagram
     timetable_assignments ||--o{ school_calendar : dates_as
     classes ||--o{ school_calendar : has_periods
     teachers ||--o{ school_calendar : assigned_to
+    school_calendar ||--o| teacher_follow_up_jobs : schedules
 
     learner_enrollments ||--o{ attendance : has_marks
     school_calendar ||--o{ attendance : records_for
@@ -271,6 +282,11 @@ The enrollment-to-attendance and enrollment-to-observation links are composite
 foreign keys over learner, class, and academic year. Test outcome and linked-test
 references also enforce that the observation and test belong to the same learner.
 The junction tables allow a test or review to cite multiple supporting records.
+`school_closure_coverage` records that closure dates are complete for a date range;
+`school_closures` lists closed dates. Queue preparation fails closed if the school
+timezone or confirmed closure coverage is missing. `teacher_follow_up_jobs` are
+durable, idempotent queue entries due no earlier than the scheduled period end; they
+do not represent an initiated or completed phone call.
 
 ### Agent/tool responsibility boundaries
 
