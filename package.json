@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "db:seed:dev": "node scripts/seed-development.cjs --confirm-development"
   },
   "dependencies": {
     "next": "^16.4.0",
