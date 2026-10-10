@@ -27,7 +27,7 @@ export default function ThisWeekPage() {
                 <p className="text-sm text-gray-500 dark:text-gray-400">Last observed: {learner.lastObserved}</p>
               </div>
               <div className="flex gap-2">
-                <Button size="sm" variant="outline">
+                <Button size="sm" variant="outline-solid">
                   <Link href={`/learners/${learner.id}`}>View</Link>
                 </Button>
                 <Button size="sm">

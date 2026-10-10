@@ -33,3 +33,14 @@
 //   ],
 //   "teacher_decision_required": true
 // }
+import { NextResponse } from "next/server";
+
+export async function POST() {
+  return NextResponse.json(
+    {
+      error: "NOT_IMPLEMENTED",
+      message: "Test suggestions are not implemented yet.",
+    },
+    { status: 501 }
+  );
+}

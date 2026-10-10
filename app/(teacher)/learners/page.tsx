@@ -42,7 +42,7 @@ export default function LearnersPage() {
                     View
                   </Link>
                 </Button>
-                <Button size="sm" variant="outline" className="flex-1">
+                <Button size="sm" variant="outline-solid" className="flex-1">
                   <Link href={`/learners/${learner.id}/log-observation`} className="w-full">
                     Observe
                   </Link>

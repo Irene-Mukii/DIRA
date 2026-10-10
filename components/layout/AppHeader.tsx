@@ -3,7 +3,7 @@ import Link from "next/link";
 
 export default function AppHeader() {
   return (
-    <header className="sticky top-0 z-40 flex h-16 items-center gap-x-4 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-4 shadow-sm sm:px-6 lg:px-8 md:hidden rounded-lg mt-2 mb-2">
+    <header className="sticky top-0 z-40 flex h-16 items-center gap-x-4 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-4 shadow-xs sm:px-6 lg:px-8 md:hidden rounded-lg mt-2 mb-2">
       <div className="flex flex-1 items-center justify-between">
         <div className="flex items-center gap-x-4">
           <Link href="/" className="flex items-center gap-x-2">

@@ -30,8 +30,8 @@ export default function TryThisPage({ params }: { params: { learnerId: string } 
           </div>
           <div className="flex gap-2 pt-4">
             <Button className="flex-1">I'll try this</Button>
-            <Button variant="outline" className="flex-1">Not yet</Button>
-            <Button variant="outline" className="flex-1">Suggest another</Button>
+            <Button variant="outline-solid" className="flex-1">Not yet</Button>
+            <Button variant="outline-solid" className="flex-1">Suggest another</Button>
           </div>
         </div>
       </Card>
