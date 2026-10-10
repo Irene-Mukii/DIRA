@@ -5,7 +5,9 @@
 
 The development setup uses a disposable PostgreSQL 16 container. The compose
 service binds only to `127.0.0.1`; its credentials are public development-only
-defaults and must never be reused outside local development.
+defaults and must never be reused outside local development. The host port is
+`5433` to avoid clashes with local PostgreSQL installations; the container still
+listens on PostgreSQL's standard port `5432`.
 
 ### Start the database
 

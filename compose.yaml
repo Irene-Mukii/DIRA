@@ -6,7 +6,7 @@ services:
       POSTGRES_USER: dira_dev
       POSTGRES_PASSWORD: dira_local_dev_only
     ports:
-      - "127.0.0.1:5432:5432"
+      - "127.0.0.1:5433:5432"
     volumes:
       - dira-postgres-data:/var/lib/postgresql/data
       - ./lib/db/dataset_schema.sql:/docker-entrypoint-initdb.d/001-dataset-schema.sql:ro

@@ -262,7 +262,7 @@ function databaseIsLocalDevelopment(connectionString) {
   return (
     ["postgres:", "postgresql:"].includes(url.protocol) &&
     ["localhost", "127.0.0.1", "::1"].includes(url.hostname.replace(/^\[|\]$/g, "")) &&
-    url.port === "5432" &&
+    ["5432", "5433"].includes(url.port) &&
     url.username === "dira_dev" &&
     url.pathname === "/dira_dev"
   );

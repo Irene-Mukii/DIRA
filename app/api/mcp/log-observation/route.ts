@@ -138,7 +138,7 @@ export async function GET(request: NextRequest) {
       `SELECT *
        FROM observations
        WHERE learner_id = $1 AND school_id = $2
-       ORDER BY observed_at DESC, created_at DESC`,
+      ORDER BY observed_at ASC, created_at ASC`,
       [learnerId, context.school_id],
     );
 
