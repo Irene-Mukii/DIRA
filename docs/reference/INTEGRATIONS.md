@@ -10,7 +10,7 @@
 | PostgreSQL | Durable learner, observation, test, outcome and related records | Database connection from server-side code | Core storage choice | Schema/migrations, constraints, persistence, backups/dev resets |
 | Whissle | Transcribe submitted in-app audio and, if implemented, phone-captured audio | Ordinary speech-to-text API unless a separate MCP server is truly used | Selected provider; account/endpoint/audio details to confirm | Supported format, maximum duration/size, confidence metadata if provided, timeout and error behaviour |
 | Africa's Talking SMS | Weekly focus reminders/notifications | Ordinary API unless a separate MCP server is truly used | Selected provider | Credentials, sender/short-code requirements, delivery status/callbacks, Kenya account permissions |
-| Africa's Talking Voice | Outbound teacher callback/call capture where implemented | Ordinary voice API unless a separate MCP server is truly used | Selected provider; capability to verify | Outbound calling, caller ID, IVR/recording/webhooks, audio retrieval, account/country restrictions and consent process |
+| Africa's Talking Voice | Outbound teacher follow-up call | Ordinary server-side voice API; not MCP | Request adapter and non-production demo-gated dispatcher implemented; no live call verified | Account credentials, caller ID, sandbox/live behavior, provider callbacks/status authentication, recording/audio retrieval, account restrictions and teacher consent |
 | Keeper.sh calendar MCP | Unified calendar context for follow-up | **Borrowed external MCP server** | Selected/planned; not complete until actual call succeeds | OAuth 2.1 flow for hosted endpoint, Streamable HTTP transport, MCP discovery/invocation, limits and returned event data |
 | Educational-source retrieval | Fast relevant lookup before every test suggestion | Separate retrieval/search adapter; not automatically MCP | Required behaviour; exact provider/adapter remains to be selected and tested | Source coverage, citations, timeout, cancellation, empty results, query privacy, reliability |
 | Google Cloud Run | Intended app deployment target from the shared plan | Hosting/platform service | Target in shared planning document; confirm actual deploy | Clean clone/build/start, environment secrets, health/readiness, smoke test |
@@ -87,6 +87,24 @@ Use the SMS API for short teacher-focused reminders if enabled. The message shou
 ## 6. Africa's Talking outbound Voice
 
 The older shared document refers to Twilio Voice, but the revised architecture selects Africa's Talking Voice. Use Africa's Talking for the current design unless the product owner explicitly changes that decision. Verify that the account supports the required outbound-call flow, audio/recording retrieval or IVR, webhook callbacks and local requirements before promising the basic-phone experience.
+
+The server-side adapter uses the provider's official Node SDK request contract:
+`POST https://voice.africastalking.com/call` (or the sandbox host), URL-encoded
+`username`, `from`, `to`, and `clientRequestId`, with the `apikey` header. This
+request format is based on the official
+[Africa's Talking Node.js SDK](https://github.com/AfricasTalkingLtd/africastalking-node.js).
+The current Dira code only records an accepted HTTP submission, not ringing,
+answering, completion, or a recording. Provider response formats and callbacks still
+need to be confirmed using the project's actual account before extending lifecycle
+claims.
+
+For safety, the current dispatcher refuses production execution and requires explicit
+local demo mode plus server-side credentials and a single configured demo destination.
+It accepts no destination from a browser or teacher record. A protected scheduler
+endpoint submits at most one due call per invocation; do not schedule it until the
+Phase 3 migration and a controlled, manually observed test are complete. The voice
+callback route returns only the fixed teacher greeting. It does not record audio,
+transcribe, or save observations.
 
 Caller ID alone is not proof of teacher identity. Authenticate the teacher through an approved challenge/context before associating a transcript with a learner. The voice call initiates/captures audio; Whissle transcribes it; Dira validates and persists it through `log_observation`.
 

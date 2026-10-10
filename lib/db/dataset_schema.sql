@@ -162,9 +162,22 @@ CREATE TABLE teacher_follow_up_jobs (
     scheduled_end_at TIMESTAMPTZ NOT NULL,
     idempotency_key TEXT NOT NULL UNIQUE,
     status TEXT NOT NULL DEFAULT 'queued' CHECK (
-        status IN ('queued', 'cancelled')
+        status IN (
+            'queued',
+            'initiating',
+            'provider_accepted',
+            'provider_rejected',
+            'outcome_unknown',
+            'cancelled'
+        )
     ),
     cancel_reason TEXT,
+    provider_request_id UUID,
+    provider_http_status INTEGER,
+    attempt_count INTEGER NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
+    attempt_started_at TIMESTAMPTZ,
+    provider_accepted_at TIMESTAMPTZ,
+    last_error_code TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

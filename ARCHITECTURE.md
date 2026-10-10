@@ -35,7 +35,7 @@ Dira supports teachers in collecting and reviewing evidence about learners over 
 | Database | PostgreSQL | System of record for learners, observations, questions/tests, outcomes, and evidence summaries/references | Dira data store; schema/client files are present in the planned structure |
 | Speech-to-text | Whissle | Transcribe audio from in-app voice notes or captured telephone audio | External API; confirm account, endpoint, audio format, and limits |
 | SMS | Africa's Talking SMS API | Send short teacher reminders and weekly focus messages | External API; selected provider |
-| Outbound voice | Africa's Talking Voice API | Initiate calls to teachers to capture an observation by phone | External API; selected provider; verify caller ID, outbound-call, recording/IVR, callback, and Kenya account requirements |
+| Outbound voice | Africa's Talking Voice API | Initiate a scheduled teacher follow-up; audio capture is a later phase | Server-side request adapter and demo-gated due dispatcher implemented; credentials, callbacks, contact consent, and live calls remain unverified |
 | Calendar MCP server (borrowed) | Keeper.sh MCP server — repository: https://github.com/ridafkih/keeper.sh; hosted MCP endpoint: `https://www.keeper.sh/mcp` | Give Dira one MCP interface for connected Google Calendar, Outlook/Microsoft 365, iCloud, Fastmail, CalDAV, and read-only ICS/iCal feeds | Selected; client transport and bounded read-only adapter implemented, but OAuth authorization and an authenticated tool call remain unverified |
 | Calendar provider access | Calendar accounts connected through Keeper.sh | Supply lesson schedule and timing context for follow-up workflows | External calendar providers; Dira should call the borrowed server through MCP rather than label a direct provider API adapter as an MCP server |
 | Educational-source retrieval | External retrieval/search adapter to approved sources (e.g. IBEF, AMI, WWC) | Quickly retrieve relevant educational guidance when generating a suggested classroom test | Required agent behaviour; exact provider/adapter must be selected and verified. No persistent source catalogue table in PostgreSQL for the MVP |
@@ -154,6 +154,8 @@ flowchart TB
         AUTH[Authentication / authorisation and request validation]
         QUEUE[Follow-up queue service]
         CRON[Protected queue trigger; hosting scheduler not configured]
+        CALL_DISPATCH[Protected due-call dispatcher]
+        VOICE_PROMPT[Static Africa's Talking voice prompt]
         ORCH[Agent orchestrator]
         MODEL[Model abstraction: lib/models.ts]
         CLIENT[MCP client: discover, invoke, validate, trace]
@@ -192,6 +194,10 @@ flowchart TB
     CRON --> ROUTES
     ROUTES --> QUEUE
     QUEUE --> PG
+    CRON --> CALL_DISPATCH
+    CALL_DISPATCH --> PG
+    CALL_DISPATCH --> ATVOICE
+    ATVOICE --> VOICE_PROMPT
     AUTH --> DBACCESS
     DBACCESS <--> PG
     AUTH --> ORCH
@@ -214,7 +220,6 @@ flowchart TB
     KEEPER <--> CALPROV
     ORCH -->|bounded retrieval request| EDU
     ORCH --> ATSMS
-    ORCH --> ATVOICE
     ATVOICE --> WHISSLE
     PG --- RECORDS
     PG --- QUEUE_RECORDS
@@ -225,6 +230,7 @@ flowchart TB
 - The agent uses the model for reasoning and the MCP client to discover/invoke Dira tools. Deterministic validation must still enforce safety; the model alone is not a security boundary.
 - Core observation writes go through `log_observation`. Other application reads may use the authorised data-access layer; not every simple database read needs an LLM or MCP call.
 - Africa's Talking handles both SMS and outbound voice. Whissle transcribes audio; it does not initiate calls.
+- The due-call dispatcher is a deterministic server-side workflow, not an LLM action. It only submits calls after schedule revalidation and only in local demo mode; the public voice callback returns a fixed prompt and does not record audio.
 - Keeper.sh is the intended borrowed MCP server. Dira connects through its MCP client; the server mediates access to calendars connected to Keeper. Google Calendar is one supported provider, not a direct Dira-to-Google REST integration in this design. Provider support and authentication must be verified during setup.
 - Before test suggestions, educational-source retrieval is attempted externally with a strict timeout. A retrieval timeout/failure falls back to the available learner evidence and model knowledge and must be visible in internal status/source attribution. No educational-source catalogue/content table is required in PostgreSQL for this behaviour.
 - Calendar information provides schedule/context. A scheduler, provider event, or other explicit trigger must wake the workflow; the model does not run continuously.

@@ -11,6 +11,7 @@ services:
       - dira-postgres-data:/var/lib/postgresql/data
       - ./lib/db/dataset_schema.sql:/docker-entrypoint-initdb.d/001-dataset-schema.sql:ro
       - ./db/002_follow_up_queue.sql:/docker-entrypoint-initdb.d/002-follow-up-queue.sql:ro
+      - ./db/003_voice_call_lifecycle.sql:/docker-entrypoint-initdb.d/003-voice-call-lifecycle.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U dira_dev -d dira_dev"]
       interval: 5s

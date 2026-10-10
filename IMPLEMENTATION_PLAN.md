@@ -79,10 +79,10 @@ recording and transcription phase can be omitted.
 |---|---|---|
 | Teacher/class schedule model | **Implemented but not verified end-to-end** | `lib/db/dataset_schema.sql` defines recurring `timetable_assignments` and dated `school_calendar` periods with start/end times and teacher context. These can be the source for due jobs; verify the actual local database state before relying on it. |
 | Calendar MCP client | **Partially implemented** | `lib/agent/mcp-client.ts` provides a server-only Streamable HTTP client with OAuth-provider injection; `lib/external-mcp/calendar.ts` provides bounded, read-only Keeper tool adapters. Dira still has no OAuth callback/session persistence, and the hosted endpoint has not been reached or verified from this environment. |
-| Outbound voice | **Not implemented** | `lib/external-mcp/voice.ts` describes a Twilio Voice MCP wrapper, which conflicts with the revised Africa's Talking decision and is not a working provider adapter. |
+| Outbound voice | **Partially implemented** | `lib/external-mcp/voice.ts` submits a server-side Africa's Talking call request with bounded timeout and sanitized outcomes. Credentials/account capability and any live call remain unverified. |
 | Speech transcription | **Not implemented** | `lib/external-mcp/stt.ts` describes Whissle as MCP and its methods return empty strings. `lib/services/transcription.ts` supplies an interface/adapter pattern, not a provider integration. |
 | Observation persistence | **Implemented in the text workflow; phone path not implemented** | Reuse the existing `log_observation` capability and the working text-observation flow. Phone-originated audio/transcripts still need validation, review, provenance, and idempotency wiring. |
-| Call lifecycle and scheduler | **Partially implemented** | A protected daily queue trigger and durable idempotent schedule-job records now exist. No external scheduler is configured, jobs have not been verified against the active database, and no phone call is dispatched. |
+| Call lifecycle and scheduler | **Partially implemented** | Protected queue and due-dispatch triggers, durable status transitions, demo-only destination gating, and a static call greeting exist. No external scheduler is configured; status callbacks, teacher authentication/consent, active database migration, and live calls remain unverified. |
 
 “Selected” providers and schema definitions do not mean the integration has been
 configured or successfully executed. Promote each status only after its acceptance
@@ -97,8 +97,8 @@ tests pass in the named environment.
   enabled for the actual hosted account until live discovery confirms them.
 - The demo destination and explicit test-mode flag are stored only in the ignored
   developer `.env.local`. The number is intentionally absent from tracked files.
-  Outbound-call enforcement is not active yet; Phase 3 must implement and test the
-  hard destination gate before any provider call can use this setting.
+  Provider credentials and caller ID still need explicit local configuration; the
+  call adapter independently enforces the demo destination before HTTP submission.
 - **Still blocked in Phase 0:** no Keeper OAuth session/calendar is configured in
   Dira; no live Africa's Talking or Whissle account capability has been verified;
   the new timezone and closure structures still need authoritative values configured
@@ -136,8 +136,40 @@ tests pass in the named environment.
   `school_closure_coverage` before expecting queue rows.
 - The queue stores eligibility and scheduled class-end time only. It does not call
   teachers, persist provider call outcomes, or enforce the demo destination; those
-  remain Phase 3 work. Keeper availability is not queried because PostgreSQL is the
+  were left to Phase 3. Keeper availability is not queried because PostgreSQL is the
   authoritative class schedule and no work-calendar conflict policy was approved.
+
+## Phase 3 implementation status (10 October 2026)
+
+- **Call submission foundation implemented; live provider workflow blocked/unverified:**
+  `lib/external-mcp/voice.ts` sends a URL-encoded request to the Africa's Talking
+  Voice endpoint using server-side credentials, a timeout, and a non-sensitive
+  request ID. A successful HTTP response records only `provider_accepted`; it does
+  not claim the teacher answered or that a recording exists.
+- `lib/services/follow-up-dispatch.ts` revalidates the scheduled period, closure
+  coverage, current teacher schedule, school-local date, and due time; it atomically
+  claims one job per invocation. Calls are possible only in non-production when
+  `DIRA_DEMO_CALL_TEST_MODE=true` and the destination is the locally configured
+  `DIRA_DEMO_CALL_TO`. The demo number is never read from the request or teacher
+  profile and is not included in responses/logs.
+- `app/api/internal/follow-up-dispatch` requires the scheduler bearer secret.
+  `app/api/voice/teacher-follow-up` returns the agreed static greeting for the
+  Africa's Talking voice callback; audio recording, transcription, persistence, and
+  teacher review remain Phase 4.
+- `db/003_voice_call_lifecycle.sql` adds provider submission states and safe call
+  request metadata. It has not been applied to the active Docker database. Compose
+  mounts it for fresh database initialization only; do not reset an existing volume.
+- **Still blocked:** the Africa's Talking account, credentials, caller ID, and
+  sandbox/live behavior have not been verified; no provider callback/result
+  authentication or event processing is implemented; no teacher login identity,
+  verified contact/consent, opt-out, quiet hours, or outcome UI is connected.
+  Production dispatch is intentionally disabled until those controls exist.
+- A 200/201 response follows the official Node SDK's documented successful-submit
+  statuses. Other successful HTTP codes are treated as unknown, not as a placed
+  call. The voice response URL must be configured and tested with the provider
+  account; Dira cannot yet verify that account-side configuration.
+- No call was made. The hosted scheduler must be configured explicitly and should
+  only be enabled after the migrations and a controlled demo are verified.
 
 ## Should Dira write school periods to teachers' work calendars?
 

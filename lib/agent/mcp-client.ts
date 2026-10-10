@@ -35,7 +35,7 @@ function validateMcpEndpoint(endpoint: string): URL {
   try {
     url = new URL(endpoint);
   } catch {
-    throw new Error("Keeper MCP endpoint must be a valid URL");
+    throw new Error("MCP server endpoint must be a valid URL");
   }
 
   const isLocalHttp =
@@ -44,11 +44,13 @@ function validateMcpEndpoint(endpoint: string): URL {
     (url.hostname === "localhost" || url.hostname === "127.0.0.1");
 
   if (url.protocol !== "https:" && !isLocalHttp) {
-    throw new Error("Keeper MCP endpoint must use HTTPS");
+    throw new Error("MCP server endpoint must use HTTPS");
   }
 
   if (url.username || url.password || url.search || url.hash) {
-    throw new Error("Keeper MCP endpoint must not contain credentials or URL extras");
+    throw new Error(
+      "MCP server endpoint must not contain credentials or URL extras",
+    );
   }
 
   return url;
@@ -109,9 +111,4 @@ export async function connectMcpServer({
       await client.close();
     },
   };
-}
-
-export function getKeeperMcpEndpoint(): string {
-  const endpoint = process.env.KEEPER_MCP_URL?.trim();
-  return endpoint || "https://www.keeper.sh/mcp";
 }

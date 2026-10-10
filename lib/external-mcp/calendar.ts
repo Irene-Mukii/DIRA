@@ -10,6 +10,11 @@ export interface CalendarEventRange {
   timezone: string;
 }
 
+export function getKeeperMcpEndpoint(): string {
+  const endpoint = process.env.KEEPER_MCP_URL?.trim();
+  return endpoint || "https://www.keeper.sh/mcp";
+}
+
 export async function discoverKeeperCalendarTools(
   session: McpSession,
 ): Promise<McpTool[]> {
