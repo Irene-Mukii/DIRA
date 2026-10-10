@@ -1,108 +1,216 @@
-// Main chat interface for capturing a teacher's observation for a selected learner.
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
-import ObservationMessage, { Message } from "./ObservationMessage";
+import React, { useEffect, useRef, useState } from "react";
+import { useParams } from "next/navigation";
 import ObservationComposer from "./ObservationComposer";
-import { TranscriptionHandler } from "@/lib/agent/transcription-handler";
+import ObservationMessage from "./ObservationMessage";
+
+interface ObservationMessageData {
+  id: string;
+  type: "teacher" | "system" | "saved";
+  content: string;
+  timestamp: string;
+  status?: "error";
+}
+
+interface LogObservationResponse {
+  error?: string;
+  observation?: {
+    observation_id: string;
+  };
+  observations?: Array<{
+    observation_id: string;
+    original_observation: string;
+    created_at: string;
+  }>;
+}
 
 interface ObservationChatProps {
-  learnerId: string;
-  learnerName?: string;
+  learnerId?: string;
   className?: string;
 }
 
-export default function ObservationChat({ learnerId, learnerName = "Learner", className }: ObservationChatProps) {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: "1",
-      type: "system",
-      content: `You're logging an observation for ${learnerName}.\n\nYou can type a note or record a short voice note (up to 1 minute). I'll save it as an observation for ${learnerName}.\n\nWhat did you notice today?`,
-    },
-  ]);
+export default function ObservationChat({
+  learnerId: suppliedLearnerId,
+  className = "",
+}: ObservationChatProps) {
+  const [messages, setMessages] = useState<ObservationMessageData[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const pendingSubmission = useRef<{
+    content: string;
+    type: string;
+    submissionId: string;
+    timestamp: string;
+  } | null>(null);
+  const params = useParams<{ learnerId?: string }>();
+  const learnerId = suppliedLearnerId ?? params.learnerId;
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
   useEffect(() => {
+    const loadObservations = async () => {
+      if (!learnerId) {
+        setMessages([{
+          id: crypto.randomUUID(),
+          type: "system",
+          content: "Select a learner before loading or saving observations.",
+          timestamp: new Date().toISOString(),
+          status: "error",
+        }]);
+        setIsLoading(false);
+        return;
+      }
+
+      try {
+        const response = await fetch(
+          `/api/mcp/log-observation?learner_id=${encodeURIComponent(learnerId)}`,
+          { cache: "no-store" },
+        );
+        const payload = await response.json() as LogObservationResponse;
+        if (!response.ok) {
+          throw new Error(payload.error || "Could not load observations.");
+        }
+
+        const loadedMessages = payload.observations ?? [];
+        setMessages(loadedMessages.map((observation) => ({
+          id: observation.observation_id,
+          type: "teacher",
+          content: observation.original_observation,
+          timestamp: observation.created_at,
+        })));
+      } catch (error) {
+        setMessages([{
+          id: crypto.randomUUID(),
+          type: "system",
+          content: error instanceof Error ? error.message : "Could not load observations.",
+          timestamp: new Date().toISOString(),
+          status: "error",
+        }]);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    void loadObservations();
+  }, [learnerId]);
+
+  useEffect(() => {
     scrollToBottom();
   }, [messages]);
 
-  const handleSubmitText = (content: string, type: string) => {
-    const newMessage: Message = {
-      id: Date.now().toString(),
-      type: "teacher",
-      content,
-      timestamp: new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }),
-    };
-    setMessages((prev) => [...prev, newMessage]);
+  const handleSubmit = async (content: string, type: string): Promise<boolean> => {
+    if (!learnerId) {
+      setMessages((current) => [...current, {
+        id: crypto.randomUUID(),
+        type: "system",
+        content: "Select a learner before saving an observation.",
+        timestamp: new Date().toISOString(),
+        status: "error",
+      }]);
+      return false;
+    }
 
-    TranscriptionHandler.store({
-      id: newMessage.id,
-      learnerId,
-      text: content,
-      timestamp: new Date(),
-      source: "text",
-    });
+    if (
+      !pendingSubmission.current ||
+      pendingSubmission.current.content !== content ||
+      pendingSubmission.current.type !== type
+    ) {
+      pendingSubmission.current = {
+        content,
+        type,
+        submissionId: crypto.randomUUID(),
+        timestamp: new Date().toISOString(),
+      };
+    }
+    const { submissionId, timestamp } = pendingSubmission.current;
 
-    setTimeout(() => {
-      const savedMessage: Message = {
-        id: (Date.now() + 1).toString(),
+    setMessages((current) => (
+      current.some((message) => message.id === submissionId)
+        ? current
+        : [...current, {
+            id: submissionId,
+            type: "teacher",
+            content,
+            timestamp,
+          }]
+    ));
+
+    try {
+      const response = await fetch("/api/mcp/log-observation", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          learner_id: learnerId,
+          content,
+          observation_type: type,
+          observed_at: timestamp,
+          capture_method: "text",
+          submission_id: submissionId,
+        }),
+      });
+      const payload = await response.json() as LogObservationResponse;
+      if (!response.ok) {
+        throw new Error(payload.error || "Could not save observation.");
+      }
+      const savedObservationId = payload.observation?.observation_id;
+      if (!savedObservationId) {
+        throw new Error("The server did not confirm the saved observation.");
+      }
+
+      setMessages((current) => current.map((message) => (
+        message.id === submissionId
+          ? { ...message, id: savedObservationId }
+          : message
+      )).filter((message) => message.id !== `error-${submissionId}`));
+      pendingSubmission.current = null;
+      setMessages((current) => [...current, {
+        id: crypto.randomUUID(),
         type: "saved",
-        content: `Observation saved\n\nI've recorded your observation for ${learnerName}.\n\nSubject: Mathematics | Type: ${type || "Classroom participation"}`,
-      };
-      setMessages((prev) => [...prev, savedMessage]);
-    }, 500);
-  };
-
-  const handleSubmitRecording = (audioBlob: Blob, audioUrl: string, type: string, transcription: string) => {
-    const recordingMessage: Message = {
-      id: Date.now().toString(),
-      type: "recording",
-      content: "",
-      audioUrl,
-      duration: 5,
-    };
-    setMessages((prev) => [...prev, recordingMessage]);
-
-    TranscriptionHandler.store({
-      id: recordingMessage.id,
-      learnerId,
-      text: transcription,
-      timestamp: new Date(),
-      source: "voice",
-    });
-
-    setTimeout(() => {
-      const transcriptionMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        type: "transcription",
-        content: transcription,
-      };
-      setMessages((prev) => [...prev, transcriptionMessage]);
-
-      setTimeout(() => {
-        const savedMessage: Message = {
-          id: (Date.now() + 2).toString(),
-          type: "saved",
-          content: `Observation saved\n\nI've recorded your observation for ${learnerName}.\n\nSubject: Mathematics | Type: ${type || "Classroom participation"}`,
+        content: "Observation saved.",
+        timestamp: new Date().toISOString(),
+      }]);
+      return true;
+    } catch (error) {
+      setMessages((current) => {
+        const errorMessage = {
+          id: `error-${submissionId}`,
+          type: "system" as const,
+          content: error instanceof Error
+            ? `Not saved: ${error.message}`
+            : "Not saved: please try again.",
+          timestamp: new Date().toISOString(),
+          status: "error" as const,
         };
-        setMessages((prev) => [...prev, savedMessage]);
-      }, 300);
-    }, 500);
+        return current.some((message) => message.id === errorMessage.id)
+          ? current.map((message) => (
+              message.id === errorMessage.id ? errorMessage : message
+            ))
+          : [...current, errorMessage];
+      });
+      return false;
+    }
   };
 
   return (
-    <div className={`flex flex-col flex-1 min-h-0 bg-white dark:bg-gray-800 rounded-b-2xl overflow-hidden px-4 md:px-6 ${className ?? ""}`}>
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0">
-        {messages.map((message) => (
-          <ObservationMessage key={message.id} message={message} />
-        ))}
+    <div className={`flex flex-col h-full bg-white dark:bg-gray-900 ${className}`}>
+      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {isLoading ? (
+          <p className="py-8 text-center text-sm text-gray-500">Loading observations…</p>
+        ) : messages.length === 0 ? (
+          <p className="py-8 text-center text-sm text-gray-500">
+            No observations yet. Add the first observation below.
+          </p>
+        ) : (
+          messages.map((message) => (
+            <ObservationMessage key={message.id} message={message} />
+          ))
+        )}
         <div ref={messagesEndRef} />
       </div>
-      <ObservationComposer onSubmit={handleSubmitText} onSubmitRecording={handleSubmitRecording} />
+      <ObservationComposer onSubmit={handleSubmit} />
     </div>
   );
 }
