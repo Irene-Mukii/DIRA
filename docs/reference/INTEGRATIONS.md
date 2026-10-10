@@ -108,6 +108,15 @@ transcribe, or save observations.
 
 Caller ID alone is not proof of teacher identity. Authenticate the teacher through an approved challenge/context before associating a transcript with a learner. The voice call initiates/captures audio; Whissle transcribes it; Dira validates and persists it through `log_observation`.
 
+The teacher-review persistence lifecycle is implemented separately from the
+evidence-oriented `verification_status`: voice-originated observations can await
+review as `recorded`, then become `confirmed` or `updated`. Original wording and
+review edits are retained in PostgreSQL review history. Compact chat controls and
+expanded learner-page controls are available in the development demo context only.
+This does not mean phone audio capture or Whissle transcription is working: the
+Africa's Talking callback currently only plays the greeting, and both provider
+recording capability and Whissle's actual API contract still need verification.
+
 ## 7. PostgreSQL
 
 Use PostgreSQL as the system of record for learner context, teacher/observer context, observations, suggested tests, linked outcomes and operational metadata appropriate to the MVP. See `DATA_MODEL.md`.

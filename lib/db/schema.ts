@@ -41,6 +41,9 @@ export interface LogObservationInput {
   linked_test_id?: string;
   capture_method: CaptureMethod;
   submission_id: string;
+  recording_reference?: string;
+  transcript_text?: string;
+  transcription_provider?: string;
 }
 
 export interface LogObservationContext {
@@ -69,7 +72,23 @@ export interface ObservationRecord {
   verification_status: string;
   submission_id: string;
   linked_test_id: string | null;
+  recording_reference: string | null;
+  transcript_text: string | null;
+  transcription_provider: string | null;
+  transcription_status: string | null;
+  teacher_review_status: "not_required" | "recorded" | "confirmed" | "updated";
+  reviewed_observation: string | null;
+  reviewed_by_teacher_id: string | null;
+  reviewed_at: Date | null;
   created_at: Date;
+}
+
+export interface ReviewObservationInput {
+  submission_id: string;
+  review_status: "confirmed" | "updated";
+  content?: string;
+  observation_type?: ObservationType;
+  linked_test_id?: string | null;
 }
 
 export interface LearnerSummary {

@@ -81,7 +81,7 @@ recording and transcription phase can be omitted.
 | Calendar MCP client | **Partially implemented** | `lib/agent/mcp-client.ts` provides a server-only Streamable HTTP client with OAuth-provider injection; `lib/external-mcp/calendar.ts` provides bounded, read-only Keeper tool adapters. Dira still has no OAuth callback/session persistence, and the hosted endpoint has not been reached or verified from this environment. |
 | Outbound voice | **Partially implemented** | `lib/external-mcp/voice.ts` submits a server-side Africa's Talking call request with bounded timeout and sanitized outcomes. Credentials/account capability and any live call remain unverified. |
 | Speech transcription | **Not implemented** | `lib/external-mcp/stt.ts` describes Whissle as MCP and its methods return empty strings. `lib/services/transcription.ts` supplies an interface/adapter pattern, not a provider integration. |
-| Observation persistence | **Implemented in the text workflow; phone path not implemented** | Reuse the existing `log_observation` capability and the working text-observation flow. Phone-originated audio/transcripts still need validation, review, provenance, and idempotency wiring. |
+| Observation persistence/review | **Text workflow implemented; review lifecycle partly implemented** | Reuses `log_observation`; separate voice-review state/history and teacher controls exist in development. Actual phone audio/transcription ingestion and production teacher authentication remain unimplemented. |
 | Call lifecycle and scheduler | **Partially implemented** | Protected queue and due-dispatch triggers, durable status transitions, demo-only destination gating, and a static call greeting exist. No external scheduler is configured; status callbacks, teacher authentication/consent, active database migration, and live calls remain unverified. |
 
 “Selected” providers and schema definitions do not mean the integration has been
@@ -170,6 +170,29 @@ tests pass in the named environment.
   account; Dira cannot yet verify that account-side configuration.
 - No call was made. The hosted scheduler must be configured explicitly and should
   only be enabled after the migrations and a controlled demo are verified.
+
+## Phase 4 implementation status
+
+- **Teacher-review persistence and controls implemented; phone capture/transcription
+  still blocked:** observation rows now have a distinct `teacher_review_status`
+  (`not_required`, `recorded`, `confirmed`, `updated`) rather than overloading
+  evidence `verification_status`. Voice-captured observations enter `recorded`.
+- The new review service only permits a pending observation to transition once,
+  checks the reviewer belongs to the observation's school, validates suggested-test
+  ownership, and records the prior/current wording and metadata in
+  `observation_review_history`. The original observation wording is not overwritten.
+  Replayed review submissions use an idempotency key.
+- The chat view has compact confirm/edit actions. The learner detail page has
+  expanded edit controls for observation type and optional suggested-test linking.
+  Review routes currently rely on the same non-production demo teacher context as
+  existing observation routes; real authenticated teacher sessions are not wired.
+- `db/004_observation_teacher_review.sql` is additive and is mounted for fresh
+  database initialization. It has **not** been applied to the active Docker database.
+- **Not implemented/verified:** the current Africa's Talking callback only plays the
+  greeting; no audio is recorded or fetched. The Whissle adapter remains a placeholder
+  and no official account-specific endpoint, audio contract, callback, consent, or
+  retention behavior has been verified. Therefore this phase does not yet produce
+  phone transcripts or claim a working voice-to-observation end-to-end flow.
 
 ## Should Dira write school periods to teachers' work calendars?
 

@@ -53,9 +53,15 @@ function validateInput(input: LogObservationInput): Date {
     ["term", input.term],
     ["activity_context", input.activity_context],
     ["linked_test_id", input.linked_test_id],
+    ["recording_reference", input.recording_reference],
+    ["transcript_text", input.transcript_text],
+    ["transcription_provider", input.transcription_provider],
   ] as const) {
     if (value !== undefined && typeof value !== "string") {
       throw new ObservationError(`${name} must be a string`, 400);
+    }
+    if (typeof value === "string" && value.length > 20_000) {
+      throw new ObservationError(`${name} is too long`, 400);
     }
   }
   return new Date(input.observed_at);
@@ -80,6 +86,13 @@ function sameSubmission(
     (input.term === undefined || existing.term === (input.term.trim() || null)) &&
     existing.activity_context === (input.activity_context?.trim() || null) &&
     existing.capture_method === input.capture_method &&
+    existing.recording_reference === (input.recording_reference?.trim() || null) &&
+    existing.transcript_text === (
+      input.transcript_text?.trim() ||
+      (input.capture_method === "in_app_voice" ||
+      input.capture_method === "basic_phone_callback" ? input.content.trim() : null)
+    ) &&
+    existing.transcription_provider === (input.transcription_provider?.trim() || null) &&
     existing.linked_test_id === (input.linked_test_id?.trim() || null)
   );
 }
@@ -224,11 +237,18 @@ export async function logObservation(
         source_type,
         capture_method,
         submission_id,
-        linked_test_id
+        linked_test_id,
+        recording_reference,
+        transcript_text,
+        transcription_provider,
+        transcription_status,
+        teacher_review_status
       )
       VALUES (
         $1, $2, $3, $4, $5, $6::date, $7, $8, $9, $10, $11,
-        $12, $13, $14, $15, $16, $17
+        $12, $13, $14, $15, $16, $17, $18, $19, $20,
+        CASE WHEN $15 IN ('in_app_voice', 'basic_phone_callback') THEN 'completed' ELSE NULL END,
+        CASE WHEN $15 IN ('in_app_voice', 'basic_phone_callback') THEN 'recorded' ELSE 'not_required' END
       )
       ON CONFLICT (submission_id) DO NOTHING
       RETURNING *`,
@@ -250,6 +270,11 @@ export async function logObservation(
         input.capture_method,
         submissionId,
         linkedTestId,
+        input.recording_reference?.trim() || null,
+        input.transcript_text?.trim() ||
+          (input.capture_method === "in_app_voice" ||
+          input.capture_method === "basic_phone_callback" ? input.content.trim() : null),
+        input.transcription_provider?.trim() || null,
       ],
     );
 

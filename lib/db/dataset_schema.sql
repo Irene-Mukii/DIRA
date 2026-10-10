@@ -235,6 +235,12 @@ CREATE TABLE observations (
     transcript_text TEXT,
     transcription_provider TEXT,
     transcription_status TEXT,
+    teacher_review_status TEXT NOT NULL DEFAULT 'not_required' CHECK (
+        teacher_review_status IN ('not_required', 'recorded', 'confirmed', 'updated')
+    ),
+    reviewed_observation TEXT,
+    reviewed_by_teacher_id TEXT REFERENCES teachers(teacher_id),
+    reviewed_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE (observation_id, learner_id),
     FOREIGN KEY (learner_id, class_id, academic_year)
@@ -249,6 +255,28 @@ CREATE INDEX idx_observations_learner_date
     ON observations (learner_id, observed_at DESC);
 CREATE INDEX idx_observations_class_date
     ON observations (class_id, observation_date DESC);
+CREATE INDEX idx_observations_teacher_review
+    ON observations (teacher_id, teacher_review_status, created_at DESC)
+    WHERE teacher_review_status = 'recorded';
+
+CREATE TABLE observation_review_history (
+    review_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    submission_id TEXT NOT NULL UNIQUE,
+    observation_id TEXT NOT NULL REFERENCES observations(observation_id) ON DELETE CASCADE,
+    reviewer_id TEXT NOT NULL REFERENCES teachers(teacher_id),
+    review_status TEXT NOT NULL CHECK (review_status IN ('confirmed', 'updated')),
+    previous_text TEXT NOT NULL,
+    updated_text TEXT,
+    previous_observation_type TEXT,
+    updated_observation_type TEXT,
+    previous_linked_test_id TEXT,
+    updated_linked_test_id TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CHECK (
+        (review_status = 'confirmed' AND updated_text IS NULL)
+        OR (review_status = 'updated' AND updated_text IS NOT NULL)
+    )
+);
 
 CREATE TABLE attendance (
     attendance_id TEXT PRIMARY KEY,

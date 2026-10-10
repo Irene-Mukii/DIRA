@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { connection } from "next/server";
-import Badge from "@/components/ui/Badge";
 import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
+import ObservationReviewControls from "@/components/observations/ObservationReviewControls";
 import { pool } from "@/lib/db/client";
 
 interface LearnerProfile {
@@ -20,8 +20,16 @@ interface LearnerProfile {
 interface ObservationRow {
   observation_id: string;
   original_observation: string;
+  reviewed_observation: string | null;
   observation_type: string;
   observed_at: Date;
+  linked_test_id: string | null;
+  teacher_review_status: "not_required" | "recorded" | "confirmed" | "updated";
+}
+
+interface SuggestedTest {
+  test_id: string;
+  suggested_activity: string;
 }
 
 function formatDate(value: Date | string | null): string {
@@ -113,12 +121,20 @@ export default async function LearnerDetailPage({
     }
 
     const observationsResult = await pool.query<ObservationRow>(
-      `SELECT observation_id, original_observation, observation_type, observed_at
+      `SELECT observation_id, original_observation, reviewed_observation,
+              observation_type, observed_at, linked_test_id, teacher_review_status
        FROM observations
        WHERE learner_id = $1 AND class_id = $2 AND academic_year = $3
        ORDER BY observed_at DESC
        LIMIT 10`,
       [learnerId, learner.class_id, learner.academic_year],
+    );
+    const testsResult = await pool.query<SuggestedTest>(
+      `SELECT test_id, suggested_activity
+       FROM activity_tests
+       WHERE learner_id = $1 AND status IN ('Pending', 'In progress')
+       ORDER BY activity_date DESC`,
+      [learnerId],
     );
 
     return (
@@ -171,13 +187,16 @@ export default async function LearnerDetailPage({
                 >
                   <div>
                     <p className="text-sm text-gray-900 dark:text-gray-100">
-                      {observation.original_observation}
+                      {observation.reviewed_observation ?? observation.original_observation}
                     </p>
                     <p className="mt-1 text-xs capitalize text-gray-500 dark:text-gray-400">
                       {formatDate(observation.observed_at)} · {observation.observation_type}
                     </p>
                   </div>
-                  <Badge variant="secondary">Saved</Badge>
+                  <ObservationReviewControls
+                    observation={observation}
+                    tests={testsResult.rows}
+                  />
                 </div>
               ))}
             </div>

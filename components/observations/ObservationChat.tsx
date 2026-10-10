@@ -11,6 +11,7 @@ interface ObservationMessageData {
   content: string;
   timestamp: string;
   status?: "error";
+  reviewStatus?: "recorded" | "confirmed" | "updated" | "not_required";
 }
 
 interface LogObservationResponse {
@@ -21,6 +22,8 @@ interface LogObservationResponse {
   observations?: Array<{
     observation_id: string;
     original_observation: string;
+    reviewed_observation: string | null;
+    teacher_review_status: ObservationMessageData["reviewStatus"];
     created_at: string;
   }>;
 }
@@ -43,6 +46,7 @@ export default function ObservationChat({
     submissionId: string;
     timestamp: string;
   } | null>(null);
+  const reviewSubmissions = useRef(new Map<string, string>());
   const params = useParams<{ learnerId?: string }>();
   const learnerId = suppliedLearnerId ?? params.learnerId;
 
@@ -78,8 +82,9 @@ export default function ObservationChat({
         setMessages(loadedMessages.map((observation) => ({
           id: observation.observation_id,
           type: "teacher",
-          content: observation.original_observation,
+          content: observation.reviewed_observation ?? observation.original_observation,
           timestamp: observation.created_at,
+          reviewStatus: observation.teacher_review_status,
         })));
       } catch (error) {
         setMessages([{
@@ -194,6 +199,56 @@ export default function ObservationChat({
     }
   };
 
+  const handleReview = async (
+    observationId: string,
+    review: { review_status: "confirmed" | "updated"; content?: string },
+  ): Promise<boolean> => {
+    const requestKey = `${observationId}:${JSON.stringify(review)}`;
+    let submissionId = reviewSubmissions.current.get(requestKey);
+    if (!submissionId) {
+      submissionId = crypto.randomUUID();
+      reviewSubmissions.current.set(requestKey, submissionId);
+    }
+
+    try {
+      const response = await fetch(
+        `/api/mcp/observations/${encodeURIComponent(observationId)}/review`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...review, submission_id: submissionId }),
+        },
+      );
+      const payload = await response.json() as {
+        error?: string;
+        observation?: { teacher_review_status: ObservationMessageData["reviewStatus"] };
+      };
+      if (!response.ok || !payload.observation) {
+        throw new Error(payload.error || "Could not review observation.");
+      }
+      reviewSubmissions.current.delete(requestKey);
+      setMessages((current) => current.map((message) => (
+        message.id === observationId
+          ? {
+              ...message,
+              content: review.content ?? message.content,
+              reviewStatus: payload.observation!.teacher_review_status,
+            }
+          : message
+      )));
+      return true;
+    } catch (error) {
+      setMessages((current) => [...current, {
+        id: crypto.randomUUID(),
+        type: "system",
+        content: error instanceof Error ? error.message : "Could not review observation.",
+        timestamp: new Date().toISOString(),
+        status: "error",
+      }]);
+      return false;
+    }
+  };
+
   return (
     <div className={`flex flex-col h-full bg-white dark:bg-gray-900 ${className}`}>
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
@@ -205,7 +260,11 @@ export default function ObservationChat({
           </p>
         ) : (
           messages.map((message) => (
-            <ObservationMessage key={message.id} message={message} />
+            <ObservationMessage
+              key={message.id}
+              message={message}
+              onReview={(review) => handleReview(message.id, review)}
+            />
           ))
         )}
         <div ref={messagesEndRef} />

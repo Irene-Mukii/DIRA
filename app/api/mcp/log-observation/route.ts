@@ -11,6 +11,15 @@ import {
 
 export const runtime = "nodejs";
 
+type ObservationChatRow = Pick<
+  ObservationRecord,
+  | "observation_id"
+  | "original_observation"
+  | "reviewed_observation"
+  | "teacher_review_status"
+  | "created_at"
+>;
+
 function demoContext(): LogObservationContext | null {
   if (process.env.NODE_ENV === "production") {
     return null;
@@ -65,6 +74,12 @@ function parseInput(value: unknown): LogObservationInput {
   ) {
     throw new ObservationError("Invalid capture_method", 400);
   }
+  if (captureMethod !== "text") {
+    throw new ObservationError(
+      "Voice observations require a verified server-side transcription flow",
+      400,
+    );
+  }
 
   return {
     learner_id: requiredString(value, "learner_id"),
@@ -97,7 +112,10 @@ export async function POST(request: NextRequest) {
     }
 
     const result = await logObservation(parseInput(body), context);
-    return NextResponse.json(result, {
+    return NextResponse.json({
+      duplicate: result.duplicate,
+      observation: { observation_id: result.observation.observation_id },
+    }, {
       status: result.duplicate ? 200 : 201,
     });
   } catch (error) {
@@ -134,12 +152,13 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const result = await pool.query<ObservationRecord>(
-      `SELECT *
+    const result = await pool.query<ObservationChatRow>(
+      `SELECT observation_id, original_observation, reviewed_observation,
+              teacher_review_status, created_at
        FROM observations
-       WHERE learner_id = $1 AND school_id = $2
+       WHERE learner_id = $1 AND school_id = $2 AND teacher_id = $3
       ORDER BY observed_at ASC, created_at ASC`,
-      [learnerId, context.school_id],
+      [learnerId, context.school_id, context.teacher_id],
     );
 
     return NextResponse.json({
