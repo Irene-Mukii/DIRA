@@ -385,11 +385,11 @@ def make_tests(
         learner_sessions = sessions_by_class[enrollment["class_id"]]
         for _ in range(rng.randint(1, 2)):
             session = rng.choice(learner_sessions)
-            status = rng.choice(("Completed", "In progress", "Pending"))
+            status = rng.choice(("COMPLETED", "ACCEPTED", "ACCEPTED"))
             test_id = f"TEST{len(tests) + 1:06d}"
             outcome_observation_id = ""
             observed_outcome = ""
-            if status == "Completed":
+            if status == "COMPLETED":
                 outcome_observation_id = f"OBS{len(observations) + len(outcome_observations) + 1:06d}"
                 observed_outcome = rng.choice(
                     (
