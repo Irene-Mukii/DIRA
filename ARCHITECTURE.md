@@ -303,6 +303,12 @@ timezone or confirmed closure coverage is missing. `teacher_follow_up_jobs` are
 durable, idempotent queue entries due no earlier than the scheduled period end; they
 do not represent an initiated or completed phone call.
 
+`teacher_reviews`, `teacher_review_observations`, and `teacher_review_tests` are
+deprecated legacy pathway-note tables. Do not add new callers or remove their
+data in the evidence-summary work. The active teacher review of observation
+transcriptions (`teacher_review_status`, `reviewed_observation`, and
+`observation_review_history`) is separate and remains in use.
+
 ### Agent/tool responsibility boundaries
 
 | Component | Responsible for | Must not do |

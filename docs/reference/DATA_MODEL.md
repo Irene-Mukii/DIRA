@@ -90,13 +90,13 @@ Do not store a fixed ability/pathway label. Any `profile_status` field should de
 | `estimated_minutes` / `estimated_effort` | Approximate preparation/runtime |
 | `what_to_observe` | Observable actions/events to look for |
 | `what_to_log_after` | Follow-up instructions for teacher |
-| `status` | `SUGGESTED`, `ACCEPTED`, `NOT_YET`, `REGENERATED`, `COMPLETED` |
+| `status` | `SUGGESTED`, `ACCEPTED`, or `COMPLETED` |
 | `created_by` / `requesting_teacher_id` | Teacher or workflow context that requested it, as appropriate |
 | `created_at` | Time created |
 | `accepted_at` | Nullable time teacher accepted/planned the test |
 | `completed_at` | Nullable time outcome was recorded and the workflow was marked complete |
 | `supersedes_test_id` | Nullable pointer to prior suggestion/version if regenerated |
-| `retrieval_status` | Educational source retrieval status for this suggestion |
+| `retrieval_status` | `not_attempted`, `success`, `partial`, `no_relevant_results`, or `failed` for external educational-source retrieval only |
 | `limitations` | Qualifying limitations as needed |
 
 ### 2.6 Test-to-evidence relationship
@@ -109,7 +109,10 @@ Each suggested test should retain a relation to the exact supporting observation
 | `observation_id` | Foreign key to the observation cited by the suggestion |
 | `citation_role` | Optional: primary support, contradiction, or contextual record |
 
-Alternatively, a JSON array of IDs can be used for a simple MVP only if every ID is still validated against PostgreSQL and relationships are reliably queried. Relational rows are easier to constrain and evaluate.
+The current implementation reuses `activity_test_observations` and stores
+`citation_role` as `supporting`, `contradicting`, or `context`. Until an explicit
+assessment assigns a role, generated suggestions save their citations as
+`context`, not as proof for or against a hypothesis.
 
 ### 2.7 Test outcome
 
@@ -121,7 +124,14 @@ A separate result table can be considered later if results need structured scori
 
 The card may be computed on request from current underlying records. Persisting the final generated prose is optional and should not be required for correctness. If snapshots are saved for performance or history, store the relevant time range, generation time/version and references to source records; always be able to rebuild from underlying records.
 
-The current MVP does not need a `pathway_notes`, `approvals`, or `guardian_deliveries` table to support the revised Evidence Card.
+The current MVP does not need a `pathway_notes`, `approvals`, or
+`guardian_deliveries` table to support the revised Evidence Card.
+
+`teacher_reviews`, `teacher_review_observations`, and `teacher_review_tests`
+remain in the legacy schema for the retired pathway-note workflow. They are
+deprecated: do not add new callers or drop the tables/data in this work. This is
+separate from the active observation transcription-review lifecycle and its
+`observation_review_history`.
 
 ### 2.9 Operational logs
 
@@ -141,15 +151,19 @@ Do not store private chain-of-thought. Avoid logging unnecessary learner text, a
 
 ```mermaid
 stateDiagram-v2
-    [*] --> SUGGESTED
-    SUGGESTED --> ACCEPTED: teacher accepts/plans
-    SUGGESTED --> NOT_YET: teacher defers
-    SUGGESTED --> REGENERATED: teacher asks for another
+    [*] --> Proposal: generated in memory for teacher review
+    Proposal --> ACCEPTED: teacher accepts/plans
+    Proposal --> SUGGESTED: teacher rejects and requests regeneration
+    SUGGESTED --> Proposal: replacement generated; proposal supersedes rejected record
     ACCEPTED --> COMPLETED: teacher records linked outcome
-    NOT_YET --> SUGGESTED: teacher revisits / new suggestion
-    REGENERATED --> SUGGESTED: new suggestion/version
     COMPLETED --> [*]
 ```
+
+`SUGGESTED` is a history record for a proposal rejected for regeneration; it is
+not the state of a new unreviewed proposal. The newly generated replacement
+remains transient until accepted or rejected. If accepted, its
+`supersedes_test_id` links it to the rejected record. A proposal awaiting
+teacher choice is therefore not persisted as an activity test.
 
 The exact transition implementation may differ, but the invariant does not: acceptance is not completion. No automatic calendar event transition makes a test completed.
 
