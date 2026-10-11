@@ -198,10 +198,57 @@ test("does not repeat a suggestion while an open test already cites the signal",
     test_id: "TEST001",
     suggested_activity: "Rotating-role group challenge",
     activity_date: "2026-05-13",
-    status: "In progress",
+    status: "ACCEPTED",
     evidence_ids: ["OBS001"],
   }];
   const result = buildSuggestion("L001", rows, priorTests);
+
+  assert.equal(result.ok, false);
+  if (!result.ok) assert.equal(result.status, "insufficient_evidence");
+});
+
+test("proposes an alternate activity after a teacher requests regeneration", () => {
+  const rows = [
+    observation("OBS001"),
+    observation("OBS002", {
+      observed_at: new Date("2026-05-12T09:00:00Z"),
+      observation_date: "2026-05-12",
+    }),
+  ];
+  const initial = buildSuggestion("L001", rows, []);
+  const regenerated = buildSuggestion("L001", rows, [{
+    test_id: "TEST001",
+    suggested_activity: "Rotating-role group challenge",
+    activity_date: "2026-05-13",
+    status: "SUGGESTED",
+    evidence_ids: ["OBS001", "OBS002"],
+  }]);
+
+  assert.equal(initial.ok, true);
+  assert.equal(regenerated.ok, true);
+  if (initial.ok && regenerated.ok) {
+    assert.notEqual(
+      regenerated.suggested_activity.title,
+      initial.suggested_activity.title,
+    );
+  }
+});
+
+test("an accepted test suppresses another proposal for the same evidence", () => {
+  const rows = [
+    observation("OBS001"),
+    observation("OBS002", {
+      observed_at: new Date("2026-05-12T09:00:00Z"),
+      observation_date: "2026-05-12",
+    }),
+  ];
+  const result = buildSuggestion("L001", rows, [{
+    test_id: "TEST001",
+    suggested_activity: "Rotating-role group challenge",
+    activity_date: "2026-05-13",
+    status: "ACCEPTED",
+    evidence_ids: ["OBS001"],
+  }]);
 
   assert.equal(result.ok, false);
   if (!result.ok) assert.equal(result.status, "insufficient_evidence");
