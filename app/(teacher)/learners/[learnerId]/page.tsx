@@ -137,7 +137,7 @@ export default async function LearnerDetailPage({
     const testsResult = await pool.query<SuggestedTest>(
       `SELECT test_id, suggested_activity
        FROM activity_tests
-       WHERE learner_id = $1 AND status IN ('Pending', 'In progress')
+       WHERE learner_id = $1 AND status = 'ACCEPTED'
        ORDER BY activity_date DESC`,
       [learnerId],
     );
@@ -153,11 +153,18 @@ export default async function LearnerDetailPage({
               {learner.grade_level} · Stream {learner.stream_label} · {learner.academic_year}
             </p>
           </div>
-          <Button>
-            <Link href={`/learners/${encodeURIComponent(learner.learner_id)}/log-observation`}>
-              Log Observation
-            </Link>
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button>
+              <Link href={`/learners/${encodeURIComponent(learner.learner_id)}/log-observation`}>
+                Log Observation
+              </Link>
+            </Button>
+            <Button>
+              <Link href={`/evidence/${encodeURIComponent(learner.learner_id)}`}>
+                Evidence Card
+              </Link>
+            </Button>
+          </div>
         </div>
 
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">

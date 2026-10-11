@@ -211,11 +211,42 @@ export async function logObservation(
     const linkedTestId = input.linked_test_id?.trim() || null;
     if (linkedTestId) {
       const test = await client.query(
-        "SELECT test_id FROM activity_tests WHERE test_id = $1 AND learner_id = $2",
-        [linkedTestId, learnerId],
+        `SELECT t.test_id
+         FROM activity_tests t
+         JOIN learner_enrollments e
+           ON e.learner_id = t.learner_id
+          AND e.school_id = $3
+          AND e.class_id = $4
+          AND e.academic_year = $5
+         JOIN timetable_assignments ta
+           ON ta.class_id = e.class_id
+          AND ta.school_id = e.school_id
+          AND ta.academic_year = e.academic_year
+         WHERE t.test_id = $1
+           AND t.learner_id = $2
+           AND t.status = 'ACCEPTED'
+           AND ta.teacher_id = $6
+           AND ta.valid_from <= $7::date
+           AND (ta.valid_to IS NULL OR ta.valid_to >= $7::date)
+           AND e.enrolled_from <= $7::date
+           AND (e.enrolled_to IS NULL OR e.enrolled_to >= $7::date)
+         LIMIT 1
+         FOR SHARE OF t`,
+        [
+          linkedTestId,
+          learnerId,
+          context.school_id,
+          learnerClass.class_id,
+          learnerClass.academic_year,
+          context.teacher_id,
+          observationDate,
+        ],
       );
       if (test.rowCount === 0) {
-        throw new ObservationError("The linked test does not belong to this learner", 400);
+        throw new ObservationError(
+          "The linked test is not accepted or unavailable to this teacher",
+          409,
+        );
       }
     }
 
@@ -279,6 +310,30 @@ export async function logObservation(
     );
 
     if (inserted.rows[0]) {
+      if (linkedTestId) {
+        const completed = await client.query(
+          `UPDATE activity_tests
+           SET status = 'COMPLETED',
+               outcome_observation_id = $1,
+               observed_outcome = $2,
+               completed_at = NOW()
+           WHERE test_id = $3
+             AND learner_id = $4
+             AND status = 'ACCEPTED'`,
+          [
+            inserted.rows[0].observation_id,
+            input.content.trim(),
+            linkedTestId,
+            learnerId,
+          ],
+        );
+        if (completed.rowCount !== 1) {
+          throw new ObservationError(
+            "Only an accepted test can be completed with a new outcome observation",
+            409,
+          );
+        }
+      }
       await client.query("COMMIT");
       return { observation: inserted.rows[0], duplicate: false };
     }

@@ -375,7 +375,10 @@ def main() -> None:
         check_reference(learner_id in learners, f"Test {row['test_id']} has unknown learner", errors)
         check_reference(teacher is not None, f"Test {row['test_id']} has unknown teacher", errors)
         check_reference(
-            row["status"] in {"Completed", "In progress", "Pending"},
+            row["status"] in {
+                "Completed", "In progress", "Pending",
+                "SUGGESTED", "ACCEPTED", "COMPLETED",
+            },
             f"Test {row['test_id']} has invalid status",
             errors,
         )
@@ -387,7 +390,7 @@ def main() -> None:
                 errors,
             )
         outcome_id = row["outcome_observation_id"]
-        if row["status"] == "Completed":
+        if row["status"] in {"Completed", "COMPLETED"}:
             outcome = observations.get(outcome_id)
             check_reference(
                 outcome is not None and outcome["learner_id"] == learner_id,
