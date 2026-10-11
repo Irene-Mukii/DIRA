@@ -1,0 +1,66 @@
+test_id,learner_id,trigger_observation_ids,suggested_activity,activity_date,conducting_teacher_id,observed_outcome,outcome_observation_id,status
+TEST000001,L001,"OBS000005, OBS000007",Pair reading with turn-taking roles,2026-07-31,T011,,,In progress
+TEST000002,L001,"OBS000006, OBS000007",Unassigned group-leadership task,2026-08-26,T005,Participated more confidently in the group activity.,OBS000293,Completed
+TEST000003,L002,"OBS000008, OBS000009",Teacher-guided checklist task,2025-04-08,T007,,,In progress
+TEST000004,L003,"OBS000012, OBS000013",Role-reversal explanation task,2025-12-22,T007,,,In progress
+TEST000005,L004,"OBS000016, OBS000017",Unassigned group-leadership task,2025-03-24,T006,,,In progress
+TEST000006,L004,"OBS000021, OBS000020",Unassigned group-leadership task,2026-11-19,T010,,,Pending
+TEST000007,L004,"OBS000018, OBS000021",Unassigned group-leadership task,2026-04-27,T008,Completed the task with fewer prompts and explained the final answer.,OBS000294,Completed
+TEST000008,L005,"OBS000022, OBS000023",Small-group problem solving without assigned leader,2025-06-25,T012,Needed support at the start but recovered after a short check-in.,OBS000295,Completed
+TEST000009,L008,"OBS000046, OBS000045",Role-reversal explanation task,2026-10-30,T011,,,Pending
+TEST000010,L008,"OBS000048, OBS000045",Pair reading with turn-taking roles,2026-03-25,T010,Needed support at the start but recovered after a short check-in.,OBS000296,Completed
+TEST000011,L009,"OBS000051, OBS000054",Short collaborative puzzle challenge,2026-10-14,T012,,,Pending
+TEST000012,L009,"OBS000052, OBS000054",Role-reversal explanation task,2026-09-21,T009,Completed the task with fewer prompts and explained the final answer.,OBS000297,Completed
+TEST000013,L010,"OBS000055, OBS000056",Short collaborative puzzle challenge,2025-04-22,T009,Completed the task with fewer prompts and explained the final answer.,OBS000298,Completed
+TEST000014,L010,"OBS000056, OBS000055",Pair reading with turn-taking roles,2025-07-28,T008,,,In progress
+TEST000015,L011,"OBS000060, OBS000061",Role-reversal explanation task,2025-05-08,T012,,,Pending
+TEST000016,L011,"OBS000061, OBS000062",Short collaborative puzzle challenge,2025-04-16,T001,,,Pending
+TEST000017,L015,"OBS000083, OBS000084",Small-group problem solving without assigned leader,2025-10-17,T012,Needed support at the start but recovered after a short check-in.,OBS000299,Completed
+TEST000018,L016,"OBS000087, OBS000088",Teacher-guided checklist task,2025-10-24,T010,Completed the task with fewer prompts and explained the final answer.,OBS000300,Completed
+TEST000019,L016,"OBS000089, OBS000087",Small-group problem solving without assigned leader,2025-02-27,T012,Needed support at the start but recovered after a short check-in.,OBS000301,Completed
+TEST000020,L017,"OBS000094, OBS000093",Teacher-guided checklist task,2025-10-27,T007,,,In progress
+TEST000021,L017,"OBS000093, OBS000094",Small-group problem solving without assigned leader,2025-03-13,T011,,,Pending
+TEST000022,L018,"OBS000101, OBS000099",Pair reading with turn-taking roles,2025-05-20,T011,Completed the task with fewer prompts and explained the final answer.,OBS000302,Completed
+TEST000023,L018,"OBS000099, OBS000101",Teacher-guided checklist task,2025-09-01,T011,,,In progress
+TEST000024,L019,"OBS000108, OBS000107",Role-reversal explanation task,2026-09-29,T005,,,In progress
+TEST000025,L020,"OBS000110, OBS000109",Small-group problem solving without assigned leader,2025-02-14,T011,,,In progress
+TEST000026,L020,"OBS000110, OBS000109",Pair reading with turn-taking roles,2025-07-08,T007,,,In progress
+TEST000027,L022,"OBS000121, OBS000122",Small-group problem solving without assigned leader,2025-09-15,T008,Participated more confidently in the group activity.,OBS000303,Completed
+TEST000028,L023,"OBS000128, OBS000129",Teacher-guided checklist task,2026-08-31,T008,,,In progress
+TEST000029,L023,"OBS000129, OBS000128",Unassigned group-leadership task,2026-06-22,T011,Participated more confidently in the group activity.,OBS000304,Completed
+TEST000030,L024,"OBS000136, OBS000134",Unassigned group-leadership task,2026-08-13,T011,Needed support at the start but recovered after a short check-in.,OBS000305,Completed
+TEST000031,L024,"OBS000134, OBS000136",Pair reading with turn-taking roles,2026-12-03,T012,,,Pending
+TEST000032,L025,"OBS000137, OBS000138",Role-reversal explanation task,2025-04-08,T007,Needed support at the start but recovered after a short check-in.,OBS000306,Completed
+TEST000033,L025,"OBS000138, OBS000137",Small-group problem solving without assigned leader,2025-12-03,T005,,,In progress
+TEST000034,L025,"OBS000140, OBS000139",Small-group problem solving without assigned leader,2026-02-05,T007,,,Pending
+TEST000035,L026,"OBS000144, OBS000146",Unassigned group-leadership task,2026-11-25,T007,,,In progress
+TEST000036,L026,"OBS000146, OBS000144",Role-reversal explanation task,2026-05-19,T005,,,Pending
+TEST000037,L027,"OBS000151, OBS000152",Pair reading with turn-taking roles,2026-02-06,T012,Completed the task with fewer prompts and explained the final answer.,OBS000307,Completed
+TEST000038,L028,"OBS000155, OBS000154",Short collaborative puzzle challenge,2025-06-26,T011,Participated more confidently in the group activity.,OBS000308,Completed
+TEST000039,L028,"OBS000156, OBS000157",Role-reversal explanation task,2026-09-23,T008,,,In progress
+TEST000040,L028,"OBS000156, OBS000157",Pair reading with turn-taking roles,2026-01-01,T008,Needed support at the start but recovered after a short check-in.,OBS000309,Completed
+TEST000041,L029,"OBS000161, OBS000159",Small-group problem solving without assigned leader,2025-09-22,T011,Completed the task with fewer prompts and explained the final answer.,OBS000310,Completed
+TEST000042,L029,"OBS000160, OBS000158",Short collaborative puzzle challenge,2025-03-06,T001,,,In progress
+TEST000043,L030,"OBS000169, OBS000167",Small-group problem solving without assigned leader,2026-12-29,T009,Participated more confidently in the group activity.,OBS000311,Completed
+TEST000044,L031,"OBS000174, OBS000175",Pair reading with turn-taking roles,2026-03-24,T005,Needed support at the start but recovered after a short check-in.,OBS000312,Completed
+TEST000045,L032,"OBS000179, OBS000178",Role-reversal explanation task,2026-02-05,T010,Completed the task with fewer prompts and explained the final answer.,OBS000313,Completed
+TEST000046,L032,"OBS000178, OBS000179",Short collaborative puzzle challenge,2026-09-21,T004,,,Pending
+TEST000047,L034,"OBS000186, OBS000185",Small-group problem solving without assigned leader,2025-10-06,T009,,,In progress
+TEST000048,L034,"OBS000185, OBS000187",Small-group problem solving without assigned leader,2025-09-18,T012,,,Pending
+TEST000049,L034,"OBS000190, OBS000189",Role-reversal explanation task,2026-04-03,T011,,,In progress
+TEST000050,L034,"OBS000188, OBS000190",Pair reading with turn-taking roles,2026-10-23,T001,Completed the task with fewer prompts and explained the final answer.,OBS000314,Completed
+TEST000051,L035,"OBS000191, OBS000193",Small-group problem solving without assigned leader,2025-02-19,T001,,,Pending
+TEST000052,L035,"OBS000192, OBS000191",Small-group problem solving without assigned leader,2025-08-27,T002,Needed support at the start but recovered after a short check-in.,OBS000315,Completed
+TEST000053,L036,"OBS000199, OBS000198",Small-group problem solving without assigned leader,2025-05-13,T012,Completed the task with fewer prompts and explained the final answer.,OBS000316,Completed
+TEST000054,L037,"OBS000203, OBS000204",Unassigned group-leadership task,2025-08-05,T007,,,In progress
+TEST000055,L037,"OBS000209, OBS000206",Unassigned group-leadership task,2026-02-26,T008,,,In progress
+TEST000056,L038,"OBS000214, OBS000215",Pair reading with turn-taking roles,2026-09-03,T007,,,In progress
+TEST000057,L040,"OBS000222, OBS000221",Role-reversal explanation task,2025-12-02,T006,,,In progress
+TEST000058,L043,"OBS000240, OBS000241",Role-reversal explanation task,2025-04-23,T007,,,Pending
+TEST000059,L043,"OBS000240, OBS000241",Teacher-guided checklist task,2025-01-29,T008,,,Pending
+TEST000060,L043,"OBS000245, OBS000242",Short collaborative puzzle challenge,2026-12-18,T010,Completed the task with fewer prompts and explained the final answer.,OBS000317,Completed
+TEST000061,L044,"OBS000248, OBS000246",Short collaborative puzzle challenge,2025-04-23,T009,Needed support at the start but recovered after a short check-in.,OBS000318,Completed
+TEST000062,L045,"OBS000255, OBS000254",Small-group problem solving without assigned leader,2025-08-18,T009,Completed the task with fewer prompts and explained the final answer.,OBS000319,Completed
+TEST000063,L046,"OBS000263, OBS000266",Small-group problem solving without assigned leader,2026-06-30,T007,,,In progress
+TEST000064,L048,"OBS000276, OBS000273",Small-group problem solving without assigned leader,2025-11-25,T012,,,In progress
+TEST000065,L050,"OBS000287, OBS000288",Teacher-guided checklist task,2025-10-23,T006,Participated more confidently in the group activity.,OBS000320,Completed

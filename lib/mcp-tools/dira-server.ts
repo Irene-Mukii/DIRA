@@ -1,5 +1,6 @@
 import "server-only";
 
+import { randomUUID } from "node:crypto";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod/v4";
 import { resolveTeacherContext } from "@/lib/auth/teacher-context";
@@ -39,6 +40,111 @@ function logToolFailure(tool: string, error: unknown): void {
   });
 }
 
+interface QueueDiagnostic {
+  code: string;
+  message: string;
+  databaseCode?: string;
+}
+
+function getQueueDiagnostic(error: unknown): QueueDiagnostic {
+  const errorMessage = error instanceof Error ? error.message.toLowerCase() : "";
+  const databaseCode =
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    typeof error.code === "string"
+      ? error.code
+      : undefined;
+
+  switch (databaseCode) {
+    case "42P01":
+      return {
+        code: "queue_schema_missing",
+        message:
+          "A required queue table is missing. Check that migration db/002_follow_up_queue.sql has been applied to the database used by Dira.",
+        databaseCode,
+      };
+    case "42703":
+      return {
+        code: "database_schema_out_of_date",
+        message:
+          "A required database column is missing. Check that the database schema and migrations match this version of Dira.",
+        databaseCode,
+      };
+    case "3D000":
+      return {
+        code: "database_not_found",
+        message:
+          "The configured PostgreSQL database does not exist. Check that DATABASE_URL points to the intended development database.",
+        databaseCode,
+      };
+    case "28P01":
+    case "28000":
+      return {
+        code: "database_authentication_failed",
+        message:
+          "PostgreSQL rejected the configured database credentials. Check the local database configuration without sharing its values.",
+        databaseCode,
+      };
+    case "08000":
+    case "08001":
+    case "08003":
+    case "08006":
+    case "57P01":
+      return {
+        code: "database_unavailable",
+        message:
+          "Dira could not maintain a connection to PostgreSQL. Check that the intended database is running and reachable.",
+        databaseCode,
+      };
+    default:
+      break;
+  }
+
+  if (
+    error instanceof Error &&
+    error.message === "No schools are configured for follow-up scheduling"
+  ) {
+    return {
+      code: "no_schools_configured",
+      message:
+        "No school records were found in the configured database. Check that the development data has been loaded.",
+    };
+  }
+
+  if (error instanceof AggregateError) {
+    return {
+      code: "queue_transaction_rollback_failed",
+      message:
+        "Queue preparation failed and PostgreSQL also reported a transaction rollback problem. Check the server log and database health before retrying.",
+    };
+  }
+
+  if (
+    (typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      typeof error.code === "string" &&
+      ["ECONNREFUSED", "ECONNRESET", "ETIMEDOUT", "EHOSTUNREACH"].includes(
+        error.code,
+      )) ||
+    errorMessage.includes("connection terminated") ||
+    errorMessage.includes("timeout")
+  ) {
+    return {
+      code: "database_connection_failed",
+      message:
+        "Dira could not connect to PostgreSQL in time. Check that the intended development database is running and reachable.",
+    };
+  }
+
+  return {
+    code: "queue_preparation_internal_error",
+    message:
+      "Queue preparation failed unexpectedly. Check the server log for the diagnostic ID and error category.",
+  };
+}
+
 function validObservedAt(value: string): boolean {
   return Number.isFinite(Date.parse(value));
 }
@@ -57,12 +163,14 @@ export function createDiraMcpServer(): McpServer {
         "Prepare eligible jobs for the server-resolved demo teacher's school and teacher. This creates database jobs only and never places calls.",
     },
     async () => {
+      let stage = "teacher_context_resolution";
       try {
         const context = await resolveTeacherContext();
         if (!context) {
           return toolError("teacher_context_unavailable", "The demo teacher context is unavailable.");
         }
 
+        stage = "queue_preparation";
         const result = await prepareDailyFollowUpQueue(
           new Date(),
           context.school_id,
@@ -70,8 +178,28 @@ export function createDiraMcpServer(): McpServer {
         );
         return toolResult(result);
       } catch (error) {
-        logToolFailure("prepare_daily_follow_up_queue", error);
-        return toolError("queue_preparation_failed", "Dira could not prepare the follow-up queue.");
+        const diagnostic = getQueueDiagnostic(error);
+        const diagnosticId = randomUUID();
+        console.error("Dira queue preparation failed", {
+          diagnosticId,
+          stage,
+          errorName: error instanceof Error ? error.name : "UnknownError",
+          errorCode: diagnostic.databaseCode ?? diagnostic.code,
+        });
+        const details = {
+          error: diagnostic.code,
+          message: `${diagnostic.message} (diagnostic ${diagnosticId})`,
+          stage,
+          diagnostic_id: diagnosticId,
+          ...(diagnostic.databaseCode
+            ? { database_code: diagnostic.databaseCode }
+            : {}),
+        };
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify(details) }],
+          structuredContent: details,
+          isError: true,
+        };
       }
     },
   );
