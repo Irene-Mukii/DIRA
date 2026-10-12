@@ -1,9 +1,32 @@
 import type { ObservationType } from "../db/schema";
 import { createHash, randomUUID } from "node:crypto";
+import {
+	retrieveEducationEvidence,
+	type EducationSourceDefinition,
+	type EducationRetrievalStatus,
+	type EducationSource,
+} from "../services/education-retrieval";
 
 export interface SuggestTestContext {
 	teacher_id: string;
 	school_id: string;
+}
+
+function proposalFingerprint(suggestion: Extract<SuggestTestResult, { ok: true }>): string {
+	const snapshot = {
+		learner_id: suggestion.learner_id,
+		exploration_question: suggestion.exploration_question,
+		hypothesis: suggestion.hypothesis,
+		reason: suggestion.reason,
+		cited_observations: suggestion.cited_observations.map((item) => ({
+			observation_id: item.observation_id,
+			content: item.content,
+		})),
+		suggested_activity: suggestion.suggested_activity,
+		what_to_log_afterward: suggestion.what_to_log_afterward,
+		limitations: suggestion.limitations,
+	};
+	return createHash("sha256").update(JSON.stringify(snapshot)).digest("hex");
 }
 
 export interface SuggestionObservation {
@@ -72,6 +95,9 @@ export type SuggestTestResult =
 	| {
 			ok: true;
 			status: "proposed";
+			proposal_id?: string;
+			retrieval_status?: EducationRetrievalStatus;
+			educational_sources?: EducationSource[];
 			learner_id: string;
 			exploration_question: string;
 			hypothesis: string;
@@ -89,7 +115,7 @@ export interface PriorTestRow {
 	test_id: string;
 	suggested_activity: string;
 	activity_date: string;
-	status: "Accepted" | "Completed" | "In progress" | "Pending";
+	status: "SUGGESTED" | "ACCEPTED" | "COMPLETED";
 	evidence_ids: string[];
 }
 
@@ -97,13 +123,23 @@ export interface AcceptSuggestionInput {
 	learner_id: string;
 	submission_id: string;
 	planned_date: string;
+	proposal_id: string;
+	supersedes_test_id?: string;
 }
 
 export interface AcceptedSuggestionResult {
 	test_id: string;
 	learner_id: string;
-	status: "Accepted";
+	status: "ACCEPTED";
 	activity_date: string;
+	duplicate: boolean;
+}
+
+export interface RegeneratedSuggestionResult {
+	rejected_test_id: string;
+	learner_id: string;
+	status: "SUGGESTED";
+	suggestion: SuggestTestResult;
 	duplicate: boolean;
 }
 
@@ -180,6 +216,54 @@ const ACTIVITY_BY_TYPE: Partial<Record<ObservationType, SuggestedActivity>> = {
 			"Which option and contribution format the learner chooses.",
 			"How the setting differs from the original observations.",
 			"Any support or peer arrangement that affected participation.",
+		],
+	},
+};
+
+const ALTERNATE_ACTIVITY_BY_TYPE: Partial<Record<ObservationType, SuggestedActivity>> = {
+	participation: {
+		title: "Quiet idea-planning before group share",
+		duration_minutes: 10,
+		purpose: "Explore whether private preparation changes participation in a group task.",
+		steps: [
+			"Give the learner a moment to sketch or note one idea before group work.",
+			"Invite, but do not require, the learner to share that idea with a partner.",
+			"Use the same familiar task without assigning a public speaking role.",
+		],
+		what_to_observe: [
+			"Whether the learner records or shares an idea.",
+			"How preparation time and partner format affect participation.",
+			"Any prompt or support used.",
+		],
+	},
+	academic: {
+		title: "Choice-of-method mini problem",
+		duration_minutes: 10,
+		purpose: "Explore how a learner approaches a familiar problem when choosing a method.",
+		steps: [
+			"Offer one short problem from the current lesson.",
+			"Let the learner choose between two familiar representations.",
+			"Invite the learner to explain the chosen approach, accepting a pass.",
+		],
+		what_to_observe: [
+			"The selected representation and first step.",
+			"Any explanation, question, or requested support.",
+			"Whether the learner changes approach.",
+		],
+	},
+	behavioral: {
+		title: "Learner-chosen task sequence",
+		duration_minutes: 10,
+		purpose: "Explore how choosing an order affects engagement with a familiar multi-step task.",
+		steps: [
+			"Offer two short, familiar task steps.",
+			"Allow the learner to choose which step to begin with.",
+			"Offer the usual support without adding a reward or penalty.",
+		],
+		what_to_observe: [
+			"Which step the learner chooses first.",
+			"Engagement and support requested at each step.",
+			"Whether the chosen order changes task completion.",
 		],
 	},
 };
@@ -372,8 +456,11 @@ export function buildSuggestion(
 		};
 	}
 
-	const openPriorTest = priorTests.find((test) =>
-		test.status !== "Completed" && test.evidence_ids.some((id) => candidate.observation_ids.includes(id)),
+	const matchingEvidenceTests = priorTests.filter((test) =>
+		test.evidence_ids.some((id) => candidate.observation_ids.includes(id)),
+	);
+	const openPriorTest = matchingEvidenceTests.find((test) =>
+		test.status === "ACCEPTED",
 	);
 	if (openPriorTest) {
 		return {
@@ -386,7 +473,13 @@ export function buildSuggestion(
 		};
 	}
 
-	const activity = ACTIVITY_BY_TYPE[candidate.observation_type]!;
+	const rejectedCount = matchingEvidenceTests.filter(
+		(test) => test.status === "SUGGESTED",
+	).length;
+	const activity = rejectedCount % 2 === 1
+		? ALTERNATE_ACTIVITY_BY_TYPE[candidate.observation_type] ??
+			ACTIVITY_BY_TYPE[candidate.observation_type]!
+		: ACTIVITY_BY_TYPE[candidate.observation_type]!;
 	const citedIds = new Set(candidate.observation_ids);
 	const citedObservations = uniqueObservations(observations)
 		.filter((observation) => citedIds.has(observation.observation_id))
@@ -453,19 +546,30 @@ export async function suggestTest(
 			under_corroborated_signals: [],
 		};
 	}
-	const enrollment = await pool.query(
+	const assignment = await pool.query(
 		`SELECT 1
-		 FROM learner_enrollments
-		 WHERE learner_id = $1 AND school_id = $2
+		 FROM learner_enrollments e
+		 JOIN timetable_assignments ta
+		   ON ta.class_id = e.class_id
+		  AND ta.school_id = e.school_id
+		  AND ta.academic_year = e.academic_year
+		 WHERE e.learner_id = $1
+		   AND e.school_id = $2
+		   AND e.enrolment_status <> 'Withdrawn'
+		   AND e.enrolled_from <= CURRENT_DATE
+		   AND (e.enrolled_to IS NULL OR e.enrolled_to >= CURRENT_DATE)
+		   AND ta.teacher_id = $3
+		   AND ta.valid_from <= CURRENT_DATE
+		   AND (ta.valid_to IS NULL OR ta.valid_to >= CURRENT_DATE)
 		 LIMIT 1`,
-		[learnerId, context.school_id],
+		[learnerId, context.school_id, context.teacher_id],
 	);
-	if (!enrollment.rowCount) {
+	if (!assignment.rowCount) {
 		return {
 			ok: false,
 			status: "learner_not_found",
 			learner_id: learnerId,
-			message: "No enrollment was found for this learner in the selected school.",
+			message: "The learner is not in a currently assigned class for this teacher.",
 			grouped_observations: [],
 			under_corroborated_signals: [],
 		};
@@ -479,8 +583,22 @@ export async function suggestTest(
 						teacher_review_status
 		 FROM observations
 		 WHERE learner_id = $1 AND school_id = $2
+		   AND EXISTS (
+			 SELECT 1
+			 FROM learner_enrollments e
+			 JOIN timetable_assignments ta
+			   ON ta.class_id = e.class_id
+			  AND ta.school_id = e.school_id
+			  AND ta.academic_year = e.academic_year
+			 WHERE e.learner_id = observations.learner_id
+			   AND e.class_id = observations.class_id
+			   AND e.academic_year = observations.academic_year
+			   AND ta.teacher_id = $3
+			   AND ta.valid_from <= CURRENT_DATE
+			   AND (ta.valid_to IS NULL OR ta.valid_to >= CURRENT_DATE)
+		   )
 		 ORDER BY observed_at ASC, observation_id ASC`,
-		[learnerId, context.school_id],
+		[learnerId, context.school_id, context.teacher_id],
 	);
 	const priorTests = await pool.query<PriorTestRow>(
 		`SELECT t.test_id, t.suggested_activity, t.activity_date, t.status,
@@ -494,15 +612,208 @@ export async function suggestTest(
 			 ON ato.test_id = t.test_id AND ato.learner_id = t.learner_id
 		 WHERE t.learner_id = $1
 			 AND EXISTS (
-				 SELECT 1 FROM learner_enrollments e
-				 WHERE e.learner_id = t.learner_id AND e.school_id = $2
+				 SELECT 1
+				 FROM learner_enrollments e
+				 JOIN timetable_assignments ta
+				   ON ta.class_id = e.class_id
+				  AND ta.school_id = e.school_id
+				  AND ta.academic_year = e.academic_year
+				 WHERE e.learner_id = t.learner_id
+				   AND e.school_id = $2
+				   AND ta.teacher_id = $3
+				   AND ta.valid_from <= CURRENT_DATE
+				   AND (ta.valid_to IS NULL OR ta.valid_to >= CURRENT_DATE)
 			 )
 		 GROUP BY t.test_id
 		 ORDER BY t.activity_date DESC, t.test_id`,
-		[learnerId, context.school_id],
+		[learnerId, context.school_id, context.teacher_id],
 	);
 
-	return buildSuggestion(learnerId, observations.rows, priorTests.rows);
+	const result = buildSuggestion(learnerId, observations.rows, priorTests.rows);
+	if (!result.ok) return result;
+	const educationSources: EducationSourceDefinition[] = [
+		{ key: "IB", name: "International Baccalaureate", url: "https://www.ibo.org/", domain: "ibo.org" },
+		{ key: "EEF", name: "Education Endowment Foundation", url: "https://educationendowmentfoundation.org.uk/", domain: "educationendowmentfoundation.org.uk" },
+		{ key: "AMI", name: "Association Montessori Internationale", url: "https://montessori-ami.org/", domain: "montessori-ami.org" },
+		{ key: "WWC", name: "What Works Clearinghouse", url: "https://ies.ed.gov/ncee/wwc/", domain: "ies.ed.gov" },
+	];
+	const retrieval = await retrieveEducationEvidence(
+		result.cited_observations[0]?.observation_type ?? "other",
+		educationSources,
+	);
+	return {
+		...result,
+		proposal_id: proposalFingerprint(result),
+		retrieval_status: retrieval.status,
+		educational_sources: retrieval.sources,
+	};
+}
+
+export async function regenerateSuggestion(
+	input: {
+		learner_id: string;
+		submission_id: string;
+		proposal_id: string;
+		supersedes_test_id?: string;
+	},
+	context: SuggestTestContext,
+): Promise<RegeneratedSuggestionResult> {
+	const learnerId = input.learner_id.trim();
+	const submissionId = input.submission_id.trim();
+	if (!learnerId || !submissionId || submissionId.length > 200) {
+		throw new SuggestionPersistenceError(
+			"learner_id and a valid submission_id are required",
+			400,
+		);
+	}
+
+	const { pool } = await import("../db/client");
+	const alreadyRejected = await pool.query<{ test_id: string }>(
+		`SELECT test_id
+		 FROM activity_tests
+		 WHERE approval_submission_id = $1
+		   AND learner_id = $2
+		   AND conducting_teacher_id = $3
+		   AND status = 'SUGGESTED'
+		 LIMIT 1`,
+		[submissionId, learnerId, context.teacher_id],
+	);
+	if (alreadyRejected.rows[0]) {
+		return {
+			rejected_test_id: alreadyRejected.rows[0].test_id,
+			learner_id: learnerId,
+			status: "SUGGESTED",
+			suggestion: await suggestTest(learnerId, context),
+			duplicate: true,
+		};
+	}
+
+	const previousSuggestion = await suggestTest(learnerId, context);
+	if (!previousSuggestion.ok) {
+		throw new SuggestionPersistenceError(previousSuggestion.message, 409);
+	}
+	if (proposalFingerprint(previousSuggestion) !== input.proposal_id) {
+		throw new SuggestionPersistenceError(
+			"The proposal changed; review the latest suggestion before responding",
+			409,
+		);
+	}
+	const client = await pool.connect();
+	let rejectedTestId = "";
+	let duplicate = false;
+	try {
+		await client.query("BEGIN");
+		const existing = await client.query<{ test_id: string }>(
+			`SELECT test_id
+			 FROM activity_tests
+			 WHERE approval_submission_id = $1
+			   AND learner_id = $2
+			   AND conducting_teacher_id = $3
+			   AND status = 'SUGGESTED'
+			 LIMIT 1`,
+			[submissionId, learnerId, context.teacher_id],
+		);
+		if (existing.rows[0]) {
+			rejectedTestId = existing.rows[0].test_id;
+			duplicate = true;
+		} else {
+			if (input.supersedes_test_id) {
+				const previous = await client.query(
+					`SELECT 1
+					 FROM activity_tests
+					 WHERE test_id = $1
+					   AND learner_id = $2
+					   AND conducting_teacher_id = $3
+					   AND status = 'SUGGESTED'
+					 FOR SHARE`,
+					[input.supersedes_test_id, learnerId, context.teacher_id],
+				);
+				if (!previous.rowCount) {
+					throw new SuggestionPersistenceError(
+						"The previous rejected suggestion is unavailable",
+						409,
+					);
+				}
+			}
+			const evidenceIds = [...new Set(
+				previousSuggestion.cited_observations.map((item) => item.observation_id),
+			)];
+			const evidence = await client.query<{ observation_id: string }>(
+				`SELECT observation_id
+				 FROM observations
+				 WHERE observation_id = ANY($1::text[])
+				   AND learner_id = $2
+				   AND school_id = $3
+				   AND teacher_review_status = ANY($4::text[])
+				 FOR SHARE`,
+				[ evidenceIds, learnerId, context.school_id, [...REVIEWED_STATUSES] ],
+			);
+			if (evidence.rowCount !== evidenceIds.length) {
+				throw new SuggestionPersistenceError(
+					"One or more cited observations are no longer eligible evidence",
+					409,
+				);
+			}
+			rejectedTestId = `TEST-${randomUUID()}`;
+			const payload = persistedSuggestion(previousSuggestion);
+			await client.query(
+				`INSERT INTO activity_tests (
+				   test_id, learner_id, suggested_activity, activity_date,
+				   conducting_teacher_id, status, approval_submission_id,
+				   supersedes_test_id, suggestion_payload, exploration_question,
+				   hypothesis, reason,
+				   purpose, estimated_minutes, what_to_observe, what_to_log_after,
+				   limitations, retrieval_status
+				 )
+				 VALUES (
+				   $1, $2, $3, CURRENT_DATE, $4, 'SUGGESTED', $5, $6, $7::jsonb,
+				   $8, $9, $10, $11, $12, $13, $14, $15, $16
+				 )`,
+				[
+					rejectedTestId,
+					learnerId,
+					activityText(previousSuggestion.suggested_activity),
+					context.teacher_id,
+					submissionId,
+					input.supersedes_test_id ?? null,
+					JSON.stringify(payload),
+					previousSuggestion.exploration_question,
+					previousSuggestion.hypothesis,
+					previousSuggestion.reason,
+					previousSuggestion.suggested_activity.purpose,
+					previousSuggestion.suggested_activity.duration_minutes,
+					previousSuggestion.suggested_activity.what_to_observe,
+					previousSuggestion.what_to_log_afterward,
+					previousSuggestion.limitations,
+					previousSuggestion.retrieval_status ?? "failed",
+				],
+			);
+			await client.query(
+				`INSERT INTO activity_test_observations (
+				   test_id, learner_id, observation_id, citation_role
+				 )
+				 SELECT $1, $2, observation_id, 'context'
+				 FROM unnest($3::text[]) AS observation_id
+				 ON CONFLICT DO NOTHING`,
+				[rejectedTestId, learnerId, evidenceIds],
+			);
+		}
+		await client.query("COMMIT");
+	} catch (error) {
+		await client.query("ROLLBACK");
+		throw error;
+	} finally {
+		client.release();
+	}
+
+	const suggestion = await suggestTest(learnerId, context);
+	return {
+		rejected_test_id: rejectedTestId,
+		learner_id: learnerId,
+		status: "SUGGESTED",
+		suggestion,
+		duplicate,
+	};
 }
 
 function isDateOnly(value: string): boolean {
@@ -531,6 +842,9 @@ function persistedSuggestion(suggestion: Extract<SuggestTestResult, { ok: true }
 		what_to_log_afterward: suggestion.what_to_log_afterward,
 		evidence_ids: suggestion.cited_observations.map((item) => item.observation_id),
 		limitations: suggestion.limitations,
+		proposal_id: suggestion.proposal_id ?? proposalFingerprint(suggestion),
+		retrieval_status: suggestion.retrieval_status ?? "failed",
+		educational_sources: suggestion.educational_sources ?? [],
 	};
 }
 
@@ -557,8 +871,10 @@ export async function acceptSuggestion(
 		learner_id: string;
 		activity_date: string;
 		status: string;
+		suggestion_payload: { proposal_id?: string } | null;
 	}>(
-		`SELECT t.test_id, t.learner_id, t.activity_date::text, t.status
+		`SELECT t.test_id, t.learner_id, t.activity_date::text, t.status,
+		        t.suggestion_payload
 		 FROM activity_tests t
 		 JOIN learner_enrollments e
 		   ON e.learner_id = t.learner_id AND e.school_id = $3
@@ -569,15 +885,27 @@ export async function acceptSuggestion(
 		[submissionId, learnerId, context.school_id, context.teacher_id],
 	);
 	if (existing.rows[0]) {
+		if (existing.rows[0].suggestion_payload?.proposal_id !== input.proposal_id) {
+			throw new SuggestionPersistenceError(
+				"submission_id was already used for a different proposal",
+				409,
+			);
+		}
 		if (existing.rows[0].activity_date !== plannedDate) {
 			throw new SuggestionPersistenceError("submission_id was already used for a different planned date", 409);
 		}
-		return { ...existing.rows[0], status: "Accepted", duplicate: true };
+		return { ...existing.rows[0], status: "ACCEPTED", duplicate: true };
 	}
 
 	const suggestion = await suggestTest(learnerId, context);
 	if (!suggestion.ok) {
 		throw new SuggestionPersistenceError(suggestion.message, 409);
+	}
+	if (suggestion.proposal_id !== input.proposal_id) {
+		throw new SuggestionPersistenceError(
+			"The proposal changed; review the latest suggestion before accepting it",
+			409,
+		);
 	}
 
 	const payload = persistedSuggestion(suggestion);
@@ -600,11 +928,42 @@ export async function acceptSuggestion(
 			 WHERE learner_id = $1 AND school_id = $2
 			   AND enrolled_from <= $3::date
 			   AND (enrolled_to IS NULL OR enrolled_to >= $3::date)
+			   AND EXISTS (
+			     SELECT 1
+			     FROM timetable_assignments ta
+			     WHERE ta.class_id = learner_enrollments.class_id
+			       AND ta.school_id = learner_enrollments.school_id
+			       AND ta.academic_year = learner_enrollments.academic_year
+			       AND ta.teacher_id = $4
+			       AND ta.valid_from <= $3::date
+			       AND (ta.valid_to IS NULL OR ta.valid_to >= $3::date)
+			   )
 			 LIMIT 1 FOR SHARE`,
-			[learnerId, context.school_id, plannedDate],
+			[learnerId, context.school_id, plannedDate, context.teacher_id],
 		);
 		if (!enrollment.rowCount) {
-			throw new SuggestionPersistenceError("Learner is not enrolled at the planned activity date", 404);
+			throw new SuggestionPersistenceError(
+				"Learner is not in a teacher-assigned class on the planned activity date",
+				404,
+			);
+		}
+		if (input.supersedes_test_id) {
+			const rejected = await client.query(
+				`SELECT 1
+				 FROM activity_tests
+				 WHERE test_id = $1
+				   AND learner_id = $2
+				   AND conducting_teacher_id = $3
+				   AND status = 'SUGGESTED'
+				 FOR SHARE`,
+				[input.supersedes_test_id, learnerId, context.teacher_id],
+			);
+			if (!rejected.rowCount) {
+				throw new SuggestionPersistenceError(
+					"The replaced suggestion is unavailable or not eligible",
+					409,
+				);
+			}
 		}
 
 		const currentEvidence = await client.query<{ observation_id: string }>(
@@ -622,9 +981,13 @@ export async function acceptSuggestion(
 		const inserted = await client.query<{ test_id: string }>(
 			`INSERT INTO activity_tests (
 			   test_id, learner_id, suggested_activity, activity_date,
-			   conducting_teacher_id, status, approval_submission_id, suggestion_payload
+			   conducting_teacher_id, status, accepted_at, supersedes_test_id,
+			   approval_submission_id, suggestion_payload, exploration_question,
+			   hypothesis, reason, purpose, estimated_minutes, what_to_observe,
+			   what_to_log_after, limitations, retrieval_status
 			 )
-			 VALUES ($1, $2, $3, $4::date, $5, 'Accepted', $6, $7::jsonb)
+			 VALUES ($1, $2, $3, $4::date, $5, 'ACCEPTED', NOW(), $6, $7, $8::jsonb,
+			         $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
 			 ON CONFLICT (approval_submission_id) DO NOTHING
 			 RETURNING test_id`,
 			[
@@ -633,8 +996,18 @@ export async function acceptSuggestion(
 				activityText(suggestion.suggested_activity),
 				plannedDate,
 				context.teacher_id,
+				input.supersedes_test_id ?? null,
 				submissionId,
 				JSON.stringify(payload),
+				suggestion.exploration_question,
+				suggestion.hypothesis,
+				suggestion.reason,
+				suggestion.suggested_activity.purpose,
+				suggestion.suggested_activity.duration_minutes,
+				suggestion.suggested_activity.what_to_observe,
+				suggestion.what_to_log_afterward,
+				suggestion.limitations,
+				suggestion.retrieval_status ?? "failed",
 			],
 		);
 
@@ -658,132 +1031,22 @@ export async function acceptSuggestion(
 				throw new SuggestionPersistenceError("submission_id was already used for a different activity", 409);
 			}
 			await client.query("COMMIT");
-			return { test_id: saved.test_id, learner_id: learnerId, status: "Accepted", activity_date: plannedDate, duplicate: true };
+			return { test_id: saved.test_id, learner_id: learnerId, status: "ACCEPTED", activity_date: plannedDate, duplicate: true };
 		}
 
 		await client.query(
-			`INSERT INTO activity_test_observations (test_id, learner_id, observation_id)
-			 SELECT $1, $2, evidence_id FROM unnest($3::text[]) AS evidence_id
+			`INSERT INTO activity_test_observations (test_id, learner_id, observation_id, citation_role)
+			 SELECT $1, $2, evidence_id, 'context'
+			 FROM unnest($3::text[]) AS evidence_id
 			 ON CONFLICT DO NOTHING`,
 			[testId, learnerId, evidenceIds],
 		);
 		await client.query("COMMIT");
-		return { test_id: testId, learner_id: learnerId, status: "Accepted", activity_date: plannedDate, duplicate: false };
+		return { test_id: testId, learner_id: learnerId, status: "ACCEPTED", activity_date: plannedDate, duplicate: false };
 	} catch (error) {
 		await client.query("ROLLBACK");
 		throw error;
 	} finally {
 		client.release();
 	}
-}
-
-export interface RecordTestOutcomeInput {
-	test_id: string;
-	learner_id: string;
-	teacher_id: string;
-	school_id: string;
-	outcome_observation: string;
-	outcome_observation_id: string;
-	submission_id: string;
-}
-
-export interface RecordTestOutcomeResult {
-	test_id: string;
-	learner_id: string;
-	status: "Completed";
-	outcome_observation_id: string;
-}
-
-export async function recordTestOutcome(
-	input: RecordTestOutcomeInput,
-): Promise<RecordTestOutcomeResult> {
-	const testId = input.test_id.trim();
-	const learnerId = input.learner_id.trim();
-	const teacherId = input.teacher_id.trim();
-	const schoolId = input.school_id.trim();
-	const outcomeObservationId = input.outcome_observation_id.trim();
-	const submissionId = input.submission_id.trim();
-
-	if (!testId || !learnerId || !teacherId || !schoolId || !outcomeObservationId || !submissionId) {
-		throw new SuggestionPersistenceError("test_id, learner_id, teacher_id, school_id, outcome_observation_id, and submission_id are required", 400);
-	}
-
-	const { pool } = await import("../db/client");
-
-	const test = await pool.query<{
-		test_id: string;
-		learner_id: string;
-		conducting_teacher_id: string;
-		status: string;
-	}>(
-		`SELECT test_id, learner_id, conducting_teacher_id, status
-		 FROM activity_tests
-		 WHERE test_id = $1 AND learner_id = $2 AND conducting_teacher_id = $3`,
-		[testId, learnerId, teacherId],
-	);
-	if (!test.rowCount) {
-		throw new SuggestionPersistenceError("Test not found or not authorized for this teacher", 404);
-	}
-	if (test.rows[0].status === "Completed") {
-		throw new SuggestionPersistenceError("Test is already completed", 409);
-	}
-
-	const outcomeObs = await pool.query<{
-		observation_id: string;
-		learner_id: string;
-		linked_test_id: string | null;
-	}>(
-		`SELECT observation_id, learner_id, linked_test_id
-		 FROM observations
-		 WHERE observation_id = $1 AND learner_id = $2`,
-		[outcomeObservationId, learnerId],
-	);
-	if (!outcomeObs.rowCount) {
-		throw new SuggestionPersistenceError("Outcome observation not found for this learner", 404);
-	}
-	if (outcomeObs.rows[0].linked_test_id && outcomeObs.rows[0].linked_test_id !== testId) {
-		throw new SuggestionPersistenceError("Outcome observation is already linked to a different test", 409);
-	}
-
-	const client = await pool.connect();
-	try {
-		await client.query("BEGIN");
-
-		await client.query(
-			`UPDATE observations
-			 SET linked_test_id = $1
-			 WHERE observation_id = $2 AND learner_id = $3`,
-			[testId, outcomeObservationId, learnerId],
-		);
-
-		await client.query(
-			`INSERT INTO activity_test_observations (test_id, learner_id, observation_id)
-			 VALUES ($1, $2, $3)
-			 ON CONFLICT DO NOTHING`,
-			[testId, learnerId, outcomeObservationId],
-		);
-
-		await client.query(
-			`UPDATE activity_tests
-			 SET status = 'Completed',
-				 observed_outcome = $1,
-				 outcome_observation_id = $2
-			 WHERE test_id = $3 AND learner_id = $4`,
-			[input.outcome_observation, outcomeObservationId, testId, learnerId],
-		);
-
-		await client.query("COMMIT");
-	} catch (error) {
-		await client.query("ROLLBACK");
-		throw error;
-	} finally {
-		client.release();
-	}
-
-	return {
-		test_id: testId,
-		learner_id: learnerId,
-		status: "Completed",
-		outcome_observation_id: outcomeObservationId,
-	};
 }

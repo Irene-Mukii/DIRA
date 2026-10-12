@@ -26,18 +26,21 @@ Dira must also use a borrowed server to satisfy the external-MCP requirement. **
 | Tool name | Ownership | Purpose | State-changing? |
 |---|---|---|---|
 | `log_observation` | Dira-owned | Validate and persist a teacher observation with provenance | Yes; creates observation |
-| `suggest_test` | Dira-owned | Review a learner's evidence, retrieve educational guidance quickly, and suggest a small classroom activity with citations | Usually yes if the suggestion/test record is persisted; exact persistence choice must be consistent in implementation |
-| `build_evidence_summary` | Dira-owned capability; legacy implementation filename may be `draftPathwayNote.ts` | Build Evidence Card content from real observations, tests, outcomes, gaps and contradictions | Read/compute; persist only if the implementation has an explicit, audited reason |
+| `suggest_test` | Dira-owned | Review a specified learner's eligible evidence, retrieve bounded official education-source material, and return an unsaved classroom-activity proposal | No; returns a transient proposal |
+| `regenerate_test_suggestion` | Dira-owned | Save the rejected proposal as `SUGGESTED`, then return a replacement proposal | Yes; saves rejected suggestion history |
+| `accept_suggested_test` | Dira-owned | Save the teacher-selected proposal as `ACCEPTED` with evidence/source snapshot and idempotency key | Yes |
+| `build_evidence_summary` | Dira-owned capability | Read saved tests, citations, external-source outcomes and teacher-recorded test outcomes for a specified learner | No; read-only |
 | `prepare_daily_follow_up_queue` | Dira-owned MCP tool | Queue eligible schedule rows for the deterministic demo teacher and school; creates jobs only | Yes; idempotent database queue preparation |
 | `list_due_follow_ups` | Dira-owned MCP tool | List due queued jobs for the deterministic demo teacher | No; read-only candidate listing |
 | `dispatch_one_due_follow_up` | Dira-owned MCP tool | Request dispatch of at most one due job after server-side checks | Yes; guarded, atomic call attempt |
 | Keeper tools such as `list_calendars` / `get_events` where exposed | Borrowed external server | Retrieve authorised calendar context via MCP | Provider/tool-dependent; request only minimal read access for MVP |
 
-The deployed Dira MCP endpoint currently exposes `log_observation`,
-`prepare_daily_follow_up_queue`, `list_due_follow_ups`, and
-`dispatch_one_due_follow_up`. The existing `suggest_test` and evidence-summary
-application routes are not thereby MCP tools. Keep the registry, schemas, tests
-and docs aligned with actual MCP discovery.
+The Dira MCP endpoint exposes the evidence tools above in addition to
+`log_observation`, `prepare_daily_follow_up_queue`, `list_due_follow_ups`, and
+`dispatch_one_due_follow_up`. Suggestion and acceptance take an explicit learner
+ID; the server-resolved teacher context and current timetable assignments scope
+which learner can be accessed. This remains a single-teacher development/demo
+resolver, not production authentication.
 
 ## 3. Shared tool rules
 
@@ -121,124 +124,83 @@ A duplicate retry should return the existing submission/observation result where
 
 Identify a question worth exploring and propose a small, feasible classroom activity that tests it. This is the agentic reasoning core, but it cannot make a learner verdict.
 
-### Proposed input schema
+### Input schema
 
 ```json
 {
-  "learner_id": "string, required",
-  "requesting_teacher_id": "string from trusted context, not model authority",
-  "context": "string, optional; relevant subject/activity context",
-  "time_window": "string or start/end dates, optional",
-  "exclude_test_ids": ["string", "optional IDs of prior suggestions not to repeat"]
+  "learner_id": "string, required; explicit learner selection"
 }
 ```
 
-### Required processing
+The trusted teacher and school are resolved server-side. This is an on-demand
+proposal for one selected learner, not an automatic roster scan at login.
 
-1. Validate teacher permission and retrieve relevant observations/tests/outcomes for the selected learner.
-2. Detect candidate repeated or weakly supported questions while preserving contradictory observations.
-3. Assess whether there is sufficient evidence to propose a useful test; a single thin observation should not become a learner trait.
-4. Attempt external retrieval of approved educational guidance **before finalising the suggestion**. Use a strict configurable timeout of a few seconds as a starting point, tuned by tests. Retrieval is a separate integration from the GLM model API.
-5. If relevant guidance was returned, pass the relevant excerpt/structured result and source metadata to the model. If retrieval times out, fails, or returns nothing relevant, continue using the available learner evidence and model knowledge, marking retrieval unavailable/no result.
-6. Generate a small, low-preparation activity including purpose, steps, approximate duration/effort, what to observe, and what to log afterwards.
-7. Validate each cited observation ID against PostgreSQL and verify that it belongs to the requested learner and supports the reason.
-8. Validate the output for fixed labels, diagnoses, rankings, pathway assignments, unsupported claims and fabricated citations.
-9. Persist a test/suggestion record if that is the chosen implementation behaviour, then return its real ID and state.
+The service checks that the learner belongs to a currently assigned class,
+considers eligible teacher-reviewed observations, preserves contradictory
+wording, and uses deterministic low-preparation activity templates. It then
+attempts bounded retrieval from the four approved official domains using only
+the observation category—not learner text or identifiers—as its external query.
+The result is transient and is not an activity-test row.
 
-### Proposed output schema
+### Output
 
 ```json
 {
   "ok": true,
-  "test_id": "real test ID if persisted",
   "learner_id": "verified learner ID",
-  "exploration_question": "A cautious question worth exploring",
-  "reason": "Why this question is worth checking",
-  "suggested_activity": "Specific classroom activity and steps",
-  "purpose": "What the activity is intended to explore",
-  "estimated_minutes": 10,
-  "what_to_observe": ["observable behaviours/events"],
-  "what_to_log_after": "What the teacher should record",
-  "evidence_ids": ["OBS-IDs actually retrieved and validated"],
-  "educational_guidance": [
-    {"title": "Actual retrieved title", "url": "actual URL", "relevant_excerpt": "short relevant excerpt"}
+  "status": "proposed",
+  "retrieval_status": "success | partial | no_relevant_results | failed",
+  "educational_sources": [
+    {"key": "EEF", "status": "success", "title": "Retrieved page", "page_url": "exact official URL", "excerpt": "short relevant excerpt"}
   ],
-  "retrieval_status": "success | no_relevant_results | timeout | provider_error | not_configured",
   "limitations": ["What the evidence does not establish"],
-  "status": "SUGGESTED"
+  "suggested_activity": {"title": "...", "steps": []}
 }
 ```
 
-`estimated_minutes` is an example schema field and may be changed to `estimated_effort` if the final UI supports qualitative values. Do not return fake evidence IDs, sources, or `test_id` values.
+If a source is unavailable, its per-source status is returned without inventing a
+citation. The overall retrieval status is distinct from the transient suggestion
+status and persisted test lifecycle.
 
-### Invariants
+## 6. Tool 3 — `regenerate_test_suggestion`
 
-- Educational guidance informs the design of an activity; it does not serve as evidence about this individual learner.
-- Do not send unnecessary learner-identifying information to educational source services.
-- Timeout/failure does not block the teacher workflow indefinitely.
-- Retrieval failure must not be hidden or represented as successful source consultation.
-- The tool suggests an exploration, not a career or learner pathway.
-
-## 6. Tool 3 — `build_evidence_summary`
-
-### Purpose
-
-Provide the data and plain-language summary for the Learner Evidence Card. The current MVP does not generate a pathway note for guardian delivery.
-
-### Proposed input schema
+This action saves the rejected proposal snapshot as `SUGGESTED`, including its
+retrieval result and observation links, then returns a replacement proposal.
+`submission_id` makes retries idempotent; `supersedes_test_id` links successive
+rejected versions. A replacement stays transient until it is accepted or itself
+rejected for another regeneration.
 
 ```json
 {
   "learner_id": "string, required",
-  "time_range": {
-    "start": "ISO-8601 datetime, optional",
-    "end": "ISO-8601 datetime, optional"
-  },
-  "include_open_questions": true
+  "submission_id": "string, required",
+  "supersedes_test_id": "string, optional; prior rejected version"
 }
 ```
 
-### Required processing
+## 7. Tool 4 — `accept_suggested_test`
 
-1. Authorise the request and query underlying observations, tests, and linked outcomes for the selected learner/time range.
-2. Validate ownership and relationships, including every observation's `linked_test_id`.
-3. Assemble questions explored, tests conducted, observed outcomes, supporting record IDs, contradictions, evidence gaps, and the time period covered.
-4. Build the card from source records rather than treating a previous AI summary as authoritative.
-5. Generate concise, cautious descriptions of what was observed and what remains unclear.
-6. Validate every claim and evidence reference; reject or rewrite unsupported language and any fixed learner label/pathway.
+Acceptance persists the current deterministic proposal as `ACCEPTED`, with a
+server timestamp, teacher context, relational observation citations, saved
+suggestion/source snapshot, and idempotency key. It requires a planned date in a
+class assigned to the trusted teacher. A `COMPLETED` test requires a teacher
+observation linked to the test; the observation and test transition are one
+transaction.
 
-### Proposed output schema
+## 8. Tool 5 — `build_evidence_summary`
+
+### Input
 
 ```json
-{
-  "ok": true,
-  "learner_id": "verified learner ID",
-  "time_range": {"start": "ISO-8601 or null", "end": "ISO-8601 or null"},
-  "questions_explored": [
-    {"question": "Question", "status": "open | explored | inconclusive", "evidence_ids": ["OBS-ID"]}
-  ],
-  "tests": [
-    {"test_id": "TEST-ID", "status": "SUGGESTED | ACCEPTED | NOT_YET | REGENERATED | COMPLETED", "outcome_observation_ids": ["OBS-ID"]}
-  ],
-  "observed_outcomes": [
-    {"summary": "Behaviour/context grounded in record", "evidence_ids": ["OBS-ID"]}
-  ],
-  "contradictions": ["Grounded description of conflicting records"],
-  "evidence_gaps": ["What has not been recorded or remains unclear"],
-  "next_questions": ["Possible question for teacher consideration"],
-  "disclaimer": "This card summarises recorded evidence and does not determine a learner's ability or future."
-}
+{"learner_id": "string, required; explicit learner selection"}
 ```
 
-### Invariants
+This read-only tool returns the selected learner's saved tests, linked
+observation citations, external retrieval outcomes, and teacher-recorded outcomes
+within the trusted teacher's currently assigned classes. It does not claim to
+produce an AI verdict or permanent learner classification.
 
-- No diagnosis, learner ranking, fixed trait, career advice or pathway assignment.
-- No claim that a test is completed without a teacher-recorded outcome.
-- Missing data is not negative evidence.
-- Contradictory evidence and timeframe limits remain visible.
-- No guardian approval or delivery capability is required by this tool.
-
-## 7. Common error contract
+## 9. Common error contract
 
 Use a consistent structured error form such as:
 
@@ -255,10 +217,10 @@ Use a consistent structured error form such as:
 
 This is a proposed contract; align the names with the implementation rather than letting each route invent a different shape. Do not return raw stack traces, secrets, or private reasoning.
 
-## 8. MCP verification checklist
+## 10. MCP verification checklist
 
 - Start the Dira MCP server and inspect the transport it actually exposes.
-- Use MCP Inspector or an equivalent client to discover the three current Dira tools and their schemas.
+- Use MCP Inspector or an equivalent client to discover all registered Dira tools and their schemas.
 - Invoke `log_observation` and verify the exact PostgreSQL record and provenance.
 - Invoke `suggest_test` and verify real observation IDs, retrieval status and source citations.
 - Invoke `build_evidence_summary` and verify each card item traces to underlying rows.

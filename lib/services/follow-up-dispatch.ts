@@ -7,18 +7,30 @@ import {
   AfricaTalkingCallError,
   initiateAfricaTalkingCall,
 } from "@/lib/external-mcp/voice";
+import {
+  getVoiceDemoDestination,
+  isE164,
+  isVoiceDemoMode,
+} from "@/lib/services/voice-config";
+
+/** A job stuck in 'initiating' this long is treated as outcome_unknown, never re-dialled. */
+const STUCK_INITIATING_MINUTES = 10;
 
 interface ClaimedCall {
   follow_up_job_id: string;
   teacher_id: string;
   provider_request_id: string;
+  /** Only populated in real mode; always null for demo calls. */
+  teacher_phone: string | null;
 }
 
 interface VoiceConfiguration {
+  mode: "demo" | "real";
   username: string;
   apiKey: string;
   callerId: string;
-  destination: string;
+  /** The demo recipient (demo mode only). */
+  destination: string | null;
   sandbox: boolean;
 }
 
@@ -26,20 +38,42 @@ export interface FollowUpDispatchResult {
   follow_up_job_id: string;
   status: "provider_accepted" | "provider_rejected" | "outcome_unknown";
   error_code?: string;
+  /** True when the call went to the demo number instead of a real teacher. */
+  is_demo?: boolean;
 }
 
 /**
  * Submit at most one eligible call per invocation, after rechecking the schedule.
- * The demo override is the only enabled recipient until teacher consent and
- * contact verification are implemented.
+ * DEMO MODE: the call goes only to the configured demo number and no teacher
+ * phone/consent is read (bypass for testing). REAL MODE: the teacher's stored phone
+ * and consent are required by the claim query; a teacher without them is never called
+ * and the demo number is never used as a fallback.
+ * Idempotency: the atomic claim (FOR UPDATE SKIP LOCKED) flips queued -> initiating,
+ * so concurrent workers, retries or repeated manual requests cannot dial a job twice.
  */
 export async function dispatchOneDueFollowUp(
   now: Date = new Date(),
   teacherContext?: LogObservationContext,
 ): Promise<FollowUpDispatchResult | null> {
   const config = getVoiceConfiguration();
-  const claimed = await claimDueFollowUp(now, teacherContext);
+  await markStuckInitiatingJobs(now);
+  const claimed = await claimDueFollowUp(now, config.mode === "real", teacherContext);
   if (!claimed) {
+    return null;
+  }
+
+  const destination =
+    config.mode === "demo" ? config.destination : claimed.teacher_phone;
+  if (!destination || !isE164(destination)) {
+    // Safety net if contact data changed between the eligibility check and the claim;
+    // nothing was sent, so the job returns to the queue instead of being lost.
+    await pool.query(
+      `UPDATE teacher_follow_up_jobs
+       SET status = 'queued', attempt_count = GREATEST(attempt_count - 1, 0),
+           last_error_code = 'missing_teacher_contact', updated_at = NOW()
+       WHERE follow_up_job_id = $1 AND status = 'initiating'`,
+      [claimed.follow_up_job_id],
+    );
     return null;
   }
 
@@ -48,9 +82,10 @@ export async function dispatchOneDueFollowUp(
       username: config.username,
       apiKey: config.apiKey,
       callerId: config.callerId,
-      destination: config.destination,
+      destination,
       clientRequestId: claimed.provider_request_id,
       sandbox: config.sandbox,
+      mode: config.mode,
     });
 
     await pool.query(
@@ -64,9 +99,17 @@ export async function dispatchOneDueFollowUp(
       [claimed.follow_up_job_id, result.httpStatus],
     );
 
+    await linkCallToJob(
+      claimed.follow_up_job_id,
+      claimed.teacher_id,
+      result.sessionId ?? null,
+      config.mode === "demo",
+    );
+
     return {
       follow_up_job_id: claimed.follow_up_job_id,
       status: "provider_accepted",
+      is_demo: config.mode === "demo",
     };
   } catch (error) {
     const callError =
@@ -91,51 +134,110 @@ export async function dispatchOneDueFollowUp(
       follow_up_job_id: claimed.follow_up_job_id,
       status,
       error_code: callError.code,
+      is_demo: config.mode === "demo",
     };
   }
 }
 
 /**
- * Refuse incomplete or unsafe provider configuration before claiming a job.
+ * Create or complete the teacher_calls row for an accepted call.
+ * A provider callback may already have created the row (keyed by sessionId) before
+ * this runs, so this upserts and fills in the job/teacher link instead of inserting twice.
+ * A call with no returned sessionId still gets a row, but callbacks cannot be matched to it.
+ */
+async function linkCallToJob(
+  followUpJobId: string,
+  teacherId: string,
+  sessionId: string | null,
+  isDemo: boolean,
+): Promise<void> {
+  if (sessionId) {
+    await pool.query(
+      `INSERT INTO teacher_calls
+         (follow_up_job_id, teacher_id, provider_session_id, is_demo)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (provider_session_id) DO UPDATE
+       SET follow_up_job_id = COALESCE(teacher_calls.follow_up_job_id, EXCLUDED.follow_up_job_id),
+           teacher_id = COALESCE(teacher_calls.teacher_id, EXCLUDED.teacher_id),
+           is_demo = EXCLUDED.is_demo,
+           updated_at = NOW()`,
+      [followUpJobId, teacherId, sessionId, isDemo],
+    );
+    return;
+  }
+  console.warn("Africa's Talking accepted a call without a sessionId; callbacks cannot be linked", {
+    followUpJobId,
+  });
+  await pool.query(
+    `INSERT INTO teacher_calls (follow_up_job_id, teacher_id, is_demo)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (follow_up_job_id) WHERE follow_up_job_id IS NOT NULL DO NOTHING`,
+    [followUpJobId, teacherId, isDemo],
+  );
+}
+
+/**
+ * Jobs left in 'initiating' (e.g. the process died mid-request) become outcome_unknown.
+ * They are never retried automatically because the provider may already have dialled.
+ */
+async function markStuckInitiatingJobs(now: Date): Promise<void> {
+  await pool.query(
+    `UPDATE teacher_follow_up_jobs
+     SET status = 'outcome_unknown', last_error_code = 'stuck_initiating', updated_at = NOW()
+     WHERE status = 'initiating'
+       AND attempt_started_at < $1::timestamptz - make_interval(mins => $2)`,
+    [now, STUCK_INITIATING_MINUTES],
+  );
+}
+
+/**
+ * Refuse incomplete or unsafe provider configuration before claiming a job, and
+ * decide demo vs real mode. Real mode is whatever demo mode is not: it never
+ * borrows the demo number.
  */
 function getVoiceConfiguration(): VoiceConfiguration {
-  if (
-    process.env.NODE_ENV === "production" ||
-    process.env.DIRA_DEMO_CALL_TEST_MODE !== "true"
-  ) {
-    throw new Error("Outbound calls are disabled outside local demo test mode");
+  const mode = isVoiceDemoMode() ? "demo" : "real";
+  if (mode === "demo" && process.env.NODE_ENV === "production") {
+    throw new Error("Demo calling is disabled in production builds");
   }
 
-  const username = process.env.AFRICASTALKING_USERNAME?.trim();
-  const apiKey = process.env.AFRICASTALKING_API_KEY?.trim();
+  // Voice uses its own live credentials; the SMS sandbox variables are never read here.
+  const username = process.env.AFRICASTALKING_USERNAME_VOICE?.trim();
+  const apiKey = process.env.AFRICASTALKING_API_KEY_VOICE?.trim();
   const callerId = process.env.AFRICASTALKING_VOICE_FROM?.trim();
-  const destination = process.env.DIRA_DEMO_CALL_TO?.trim();
-  const sandboxValue = process.env.AFRICASTALKING_SANDBOX?.trim();
+  const destination = getVoiceDemoDestination() ?? null;
 
-  if (!username || !apiKey || !callerId || !destination) {
-    throw new Error("Africa's Talking demo calling is not fully configured");
+  if (!username || !apiKey || !callerId) {
+    throw new Error(
+      "Africa's Talking voice is not fully configured (AFRICASTALKING_USERNAME_VOICE, AFRICASTALKING_API_KEY_VOICE, AFRICASTALKING_VOICE_FROM)",
+    );
   }
-  if (!isE164(destination) || !isE164(callerId)) {
+  if (mode === "demo" && !destination) {
+    throw new Error("Demo mode requires an explicit demo recipient number");
+  }
+  if (!isE164(callerId) || (destination && !isE164(destination))) {
     throw new Error("Africa's Talking caller and demo destination must be E.164 numbers");
-  }
-  if (sandboxValue !== "true" && sandboxValue !== "false") {
-    throw new Error("AFRICASTALKING_SANDBOX must be explicitly true or false");
   }
 
   return {
+    mode,
     username,
     apiKey,
     callerId,
-    destination,
-    sandbox: sandboxValue === "true",
+    destination: mode === "demo" ? destination : null,
+    // Voice always targets the production endpoint (https://voice.africastalking.com/call).
+    sandbox: false,
   };
 }
 
 /**
  * Claim one due row atomically so concurrent scheduler runs cannot dial twice.
+ * In real mode the eligibility query also requires the teacher's stored phone and
+ * consent, so jobs for teachers without them are simply never claimed.
  */
 async function claimDueFollowUp(
   now: Date,
+  requireTeacherContact: boolean,
   teacherContext?: LogObservationContext,
 ): Promise<ClaimedCall | null> {
   const client = await pool.connect();
@@ -170,6 +272,15 @@ async function claimDueFollowUp(
            AND job.scheduled_end_at <= $1
            AND ($3::text IS NULL OR job.teacher_id = $3)
            AND ($4::text IS NULL OR job.school_id = $4)
+           AND (
+             $5::boolean = FALSE
+             OR EXISTS (
+               SELECT 1 FROM teachers AS contact
+               WHERE contact.teacher_id = job.teacher_id
+                 AND contact.phone_e164 IS NOT NULL
+                 AND contact.voice_consent_at IS NOT NULL
+             )
+           )
            AND school.timezone IS NOT NULL
            AND job.scheduled_date =
              ($1 AT TIME ZONE school.timezone)::date
@@ -225,8 +336,17 @@ async function claimDueFollowUp(
        FROM eligible
        WHERE job.follow_up_job_id = eligible.follow_up_job_id
        RETURNING job.follow_up_job_id, job.teacher_id,
-                 job.provider_request_id::text AS provider_request_id`,
-      [now, requestId, teacherContext?.teacher_id ?? null, teacherContext?.school_id ?? null],
+                 job.provider_request_id::text AS provider_request_id,
+                 CASE WHEN $5::boolean THEN
+                   (SELECT phone_e164 FROM teachers WHERE teacher_id = job.teacher_id)
+                 END AS teacher_phone`,
+      [
+        now,
+        requestId,
+        teacherContext?.teacher_id ?? null,
+        teacherContext?.school_id ?? null,
+        requireTeacherContact,
+      ],
     );
 
     await client.query("COMMIT");
@@ -244,9 +364,4 @@ async function claimDueFollowUp(
   } finally {
     client.release();
   }
-}
-
-/** Accept international E.164 format without formatting or guessing a number. */
-function isE164(value: string): boolean {
-  return /^\+[1-9]\d{7,14}$/.test(value);
 }

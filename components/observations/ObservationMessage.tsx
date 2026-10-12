@@ -24,10 +24,20 @@ export default function ObservationMessage({ message, onReview }: ObservationMes
   const [isEditing, setIsEditing] = useState(false);
   const [draft, setDraft] = useState(message.content);
   const [isSaving, setIsSaving] = useState(false);
+  const [showReviewUI, setShowReviewUI] = useState(false);
+
+  const needsReview = message.type === "teacher" &&
+    message.reviewStatus &&
+    message.reviewStatus !== "not_required" &&
+    onReview;
 
   if (message.type === "teacher") {
     return (
-      <div className="flex justify-end">
+      <div
+        className="flex justify-end"
+        onMouseEnter={() => needsReview && setShowReviewUI(true)}
+        onMouseLeave={() => !isEditing && setShowReviewUI(false)}
+      >
         <div className="max-w-xs rounded-2xl rounded-tr-sm bg-blue-600 px-4 py-2 text-white lg:max-w-md">
           {isEditing ? (
             <textarea
@@ -36,6 +46,7 @@ export default function ObservationMessage({ message, onReview }: ObservationMes
               onChange={(event) => setDraft(event.target.value)}
               className="w-full rounded bg-white p-2 text-sm text-gray-900"
               rows={3}
+              autoFocus
             />
           ) : (
             <p className="whitespace-pre-wrap text-sm">{message.content}</p>
@@ -43,14 +54,14 @@ export default function ObservationMessage({ message, onReview }: ObservationMes
           {message.timestamp && (
             <p className="text-xs text-blue-100 mt-1">{message.timestamp}</p>
           )}
-          {message.reviewStatus && message.reviewStatus !== "not_required" && (
+          {needsReview && (showReviewUI || isEditing) && (
             <div className="mt-2 flex items-center justify-between gap-3 border-t border-blue-400/50 pt-2">
               <span className="text-xs capitalize text-blue-100">
                 {message.reviewStatus === "recorded"
                   ? "Awaiting your review"
                   : message.reviewStatus}
               </span>
-              {message.reviewStatus === "recorded" && onReview && (
+              {message.reviewStatus === "recorded" && (
                 <div className="flex items-center gap-1">
                   {isEditing ? (
                     <>

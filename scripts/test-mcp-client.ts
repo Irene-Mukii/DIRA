@@ -15,9 +15,10 @@ const transport = new StdioClientTransport({
   args: ["--import", "tsx", "scripts/mcp-server.ts"],
   cwd: process.cwd(),
   env: {
-    PATH: process.env.PATH ?? "",
+    ...process.env,
     NODE_ENV: "development",
   },
+
 });
 
 async function main() {
@@ -42,8 +43,10 @@ async function main() {
     const result = await client.callTool({
       name: "log_observation",
       arguments: {
-        learner_id: "learner-demo-001",
+        learner_id: "L009",
+        linked_test_id: "TEST000011",
         observation_type: "participation",
+        observed_at: new Date().toISOString(),
         content:
           "During group work, the learner explained their solution to two classmates.",
         subject: "Mathematics",

@@ -35,7 +35,7 @@ Dira supports teachers in collecting and reviewing evidence about learners over 
 | Dira MCP tool: test suggestion | `lib/mcp-tools/suggestTest.ts` | Propose a small, practical classroom test grounded in learner evidence | Dira-owned tool |
 | Evidence summary | `lib/mcp-tools/draftPathwayNote.ts` (existing filename) | Build the evidence-grounded content used by the Learner Evidence Card; must not assign a pathway or produce a learner verdict | Dira-owned capability; filename is legacy and can be renamed later |
 | Database | PostgreSQL | System of record for learners, observations, questions/tests, outcomes, and evidence summaries/references | Dira data store; schema/client files are present in the planned structure |
-| Speech-to-text | Whissle | Transcribe audio from in-app voice notes or captured telephone audio | External API; confirm account, endpoint, audio format, and limits |
+| Speech-to-text | OpenAI Audio Transcriptions API (MVP only) | Transcribe captured telephone audio | Hosted API; replace before go-live with a security-reviewed self-hosted open-weight model |
 | SMS | Africa's Talking SMS API | Send short teacher reminders and weekly focus messages | External API; selected provider |
 | Outbound voice | Africa's Talking Voice API | Initiate a scheduled teacher follow-up; audio capture is a later phase | Server-side request adapter, demo-gated due dispatcher, and teacher-scoped development status page implemented; credentials, callbacks, teacher authentication/consent, and live calls remain unverified |
 | Calendar MCP server (borrowed) | Keeper.sh MCP server — repository: https://github.com/ridafkih/keeper.sh; hosted MCP endpoint: `https://www.keeper.sh/mcp` | Give Dira one MCP interface for connected Google Calendar, Outlook/Microsoft 365, iCloud, Fastmail, CalDAV, and read-only ICS/iCal feeds | Selected; client transport and bounded read-only adapter implemented, but OAuth authorization and an authenticated tool call remain unverified |
@@ -69,7 +69,7 @@ Dira supports teachers in collecting and reviewing evidence about learners over 
 
 **External/borrowed services and MCP**
 - Hosted GLM-5.3 model API.
-- Whissle speech-to-text API.
+- OpenAI Audio Transcriptions API for MVP speech-to-text; replace before go-live with a reviewed self-hosted open-weight model.
 - Africa's Talking SMS and Voice APIs.
 - **Keeper.sh: the selected borrowed, third-party calendar MCP server** ([repository](https://github.com/ridafkih/keeper.sh), [MCP documentation](https://www.keeper.sh/docs/mcp)). Its documented providers include Google Calendar, Outlook/Microsoft 365, iCloud, Fastmail, CalDAV, and pull-only iCal/ICS feeds. It does not document a native Calendly integration, so do not claim direct Calendly support. The hosted MCP endpoint uses streamable HTTP and OAuth 2.1. The hosted free plan documents 25 API/MCP requests per day; verify this is enough for development and the demo, or deliberately evaluate self-hosting.
 - An external retrieval/search adapter for educational sources, to be selected and tested. This is not assumed to be an MCP server unless we explicitly integrate a real MCP server for retrieval.
@@ -96,7 +96,7 @@ flowchart TD
     D --> E{Capture method}
     E -->|Type in chat composer| F[Teacher enters observation]
     E -->|Record in chat composer| G[Audio captured in browser]
-    G --> H[Whissle transcribes audio]
+    G --> H[OpenAI transcribes audio (MVP)]
     F --> I[Validate teacher, learner, fields and submission]
     H --> I
     I --> J[log_observation MCP tool]
@@ -124,7 +124,7 @@ flowchart TD
 1. **Start at This Week.** The teacher sees a weekly focus and selects a learner who needs attention or whose evidence is relevant to current work.
 2. **Review the Learner Record.** The page shows saved observations, their dates and provenance, and questions that remain open.
 3. **Capture an observation.** The teacher opens the chat-style Log Observation page. A single composer supports typed text or an in-app voice recording. A phone-based capture is a separate route initiated through Africa's Talking Voice API.
-4. **Transcribe and validate when needed.** In-app audio or telephone audio is sent through the appropriate backend flow to Whissle. The original capture/transcript should be retained separately from any cleaned text. The backend validates teacher authorisation, learner identity, required fields, and duplicate/retry identifiers.
+4. **Transcribe and validate when needed.** The MVP sends telephone recordings through the backend to OpenAI's transcription API. This is a temporary security exception because recordings may contain learner information. Before go-live, replace it with a security-reviewed self-hosted open-weight model in DIRA-controlled infrastructure. The backend validates teacher authorisation, learner identity, required fields, and duplicate/retry identifiers.
 5. **Persist through the Dira tool.** Core observation writes go through `log_observation` MCP, which persists the validated observation in PostgreSQL. Show success only after persistence is confirmed.
 6. **Retrieve educational guidance quickly.** Before generating the suggested test, the agent attempts to retrieve relevant material from approved external educational sources. The request has a short, configurable timeout. If retrieval succeeds, relevant guidance and source details are passed into the suggestion step. If it fails or times out, the workflow continues with the learner evidence and the model's available knowledge; Dira must not pretend it retrieved or cited an external source. Retrieval failure must not block the teacher workflow.
 7. **Suggest a small test.** `suggest_test` proposes a feasible classroom activity and identifies the actual observation IDs that support the question. Insufficient or contradictory learner evidence must be acknowledged. Educational guidance can inform an activity but cannot replace or overrule the learner-specific evidence.
@@ -185,7 +185,7 @@ flowchart TB
 
     subgraph EXT["External services — borrowed"]
         GLM[Hosted GLM-5.3 API]
-        WHISSLE[Whissle STT]
+        STT[Hosted OpenAI STT - MVP only]
         ATVOICE[Africa's Talking Voice API]
         ATSMS[Africa's Talking SMS API]
         KEEPER[Keeper.sh external calendar MCP server]
@@ -222,14 +222,14 @@ flowchart TB
     ORCH --> LOG
     CLIENT --> LOG
     LOG --> PG
-    LO --> WHISSLE
-    WHISSLE --> AUTH
+    LO --> STT
+    STT --> AUTH
     ORCH -->|MCP protocol| CLIENT
     CLIENT <-->|MCP protocol| KEEPER
     KEEPER <--> CALPROV
     ORCH -->|bounded retrieval request| EDU
     ORCH --> ATSMS
-    ATVOICE --> WHISSLE
+    ATVOICE --> STT
     PG --- RECORDS
     PG --- QUEUE_RECORDS
 ```
@@ -238,7 +238,7 @@ flowchart TB
 - The frontend calls authorised application routes/server actions. It does not connect directly to PostgreSQL or expose model/provider secrets.
 - The agent uses the model for reasoning and the MCP client to discover/invoke Dira tools. Deterministic validation must still enforce safety; the model alone is not a security boundary.
 - Core observation writes go through `log_observation`. Other application reads may use the authorised data-access layer; not every simple database read needs an LLM or MCP call.
-- Africa's Talking handles both SMS and outbound voice. Whissle transcribes audio; it does not initiate calls.
+- Africa's Talking handles both SMS and outbound voice. OpenAI performs MVP transcription; it does not initiate calls. Use a self-hosted open-weight model before go-live.
 - The due-call dispatcher is a deterministic server-side workflow, not an LLM action. It only submits calls after schedule revalidation and only in local demo mode; the public voice callback returns a fixed prompt and does not record audio.
 - Keeper.sh is the intended borrowed MCP server. Dira connects through its MCP client; the server mediates access to calendars connected to Keeper. Google Calendar is one supported provider, not a direct Dira-to-Google REST integration in this design. Provider support and authentication must be verified during setup.
 - Before test suggestions, educational-source retrieval is attempted externally with a strict timeout. A retrieval timeout/failure falls back to the available learner evidence and model knowledge and must be visible in internal status/source attribution. No educational-source catalogue/content table is required in PostgreSQL for this behaviour.
@@ -303,6 +303,12 @@ timezone or confirmed closure coverage is missing. `teacher_follow_up_jobs` are
 durable, idempotent queue entries due no earlier than the scheduled period end; they
 do not represent an initiated or completed phone call.
 
+`teacher_reviews`, `teacher_review_observations`, and `teacher_review_tests` are
+deprecated legacy pathway-note tables. Do not add new callers or remove their
+data in the evidence-summary work. The active teacher review of observation
+transcriptions (`teacher_review_status`, `reviewed_observation`, and
+`observation_review_history`) is separate and remains in use.
+
 ### Agent/tool responsibility boundaries
 
 | Component | Responsible for | Must not do |
@@ -317,7 +323,7 @@ do not represent an initiated or completed phone call.
 | Evidence summary | Summarise questions, tests, outcomes, gaps, and contradictions | Assign a fixed pathway or produce an unsupported verdict |
 | PostgreSQL | Store durable learner/source records and relationships; later may store educational-source catalogue/reference metadata after a separate scope decision | Treat AI-generated summaries as the sole source of truth; require a dedicated educational-source table for current retrieval |
 | Africa's Talking | Deliver SMS and initiate outbound calls | Transcribe audio or decide what a learner's evidence means |
-| Whissle | Transcribe audio | Decide the educational meaning of an observation |
+| OpenAI (MVP only) | Transcribe audio | Decide the educational meaning of an observation |
 | External educational retrieval adapter | Attempt a quick retrieval of relevant approved guidance for each test suggestion; return source metadata and status | Block the workflow indefinitely, claim a source was used when unavailable, or replace learner-specific evidence |
 | Keeper.sh calendar MCP server | Expose supported connected calendars through external MCP tools | Prove that a lesson happened or that a learner attended |
 
@@ -409,7 +415,7 @@ dira/
 │   ├── external-mcp/
 │   │   ├── calendar.ts             # Calendar integration adapter/context.
 │   │   ├── sms.ts                  # Africa's Talking SMS adapter.
-│   │   ├── stt.ts                  # Whissle speech-to-text adapter.
+│   │   ├── stt.ts                  # OpenAI MVP transcription adapter; replace before go-live.
 │   │   └── voice.ts                # Africa's Talking outbound voice adapter.
 │   ├── integrations/
 │   │   └── index.ts                # Shared integration exports or registry.
@@ -501,7 +507,7 @@ Actual variable names must be taken from the implementation and provider documen
 
 - PostgreSQL connection.
 - Hosted GLM-5.3 provider API key and model identifier.
-- Whissle credentials/configuration.
+- `OPENAI_API_KEY` for MVP transcription; replace the hosted service with a security-reviewed self-hosted open-weight model before go-live.
 - Africa's Talking SMS and Voice credentials/configuration.
 - Keeper.sh MCP endpoint and authentication configuration (including the OAuth 2.1 flow required by the chosen hosted/self-hosted setup). Calendar-provider accounts are connected through Keeper; Dira should not independently call Google Calendar REST APIs for this integration.
 - Application URL and any authentication/session configuration.

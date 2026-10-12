@@ -13,6 +13,17 @@ import {
   listDueFollowUps,
   prepareDailyFollowUpQueue,
 } from "@/lib/services/follow-up-queue";
+import { buildEvidenceSummary } from "@/lib/services/evidence-summary";
+import {
+  DraftError,
+  saveCallObservationDrafts,
+} from "@/lib/services/call-observations";
+import {
+  acceptSuggestion,
+  regenerateSuggestion,
+  suggestTest,
+  SuggestionPersistenceError,
+} from "@/lib/mcp-tools/suggestTest";
 
 function toolResult(value: unknown) {
   const text = JSON.stringify(value);
@@ -302,6 +313,153 @@ export function createDiraMcpServer(): McpServer {
           return toolError("observation_rejected", error.message);
         }
         return toolError("observation_save_failed", "Dira could not save the observation.");
+      }
+    },
+  );
+
+  server.registerTool(
+    "build_evidence_summary",
+    {
+      title: "Review a learner's evidence card",
+      description:
+        "Read saved evidence tests and teacher-recorded outcomes for one explicitly selected learner in the server-resolved teacher's assigned classes.",
+      inputSchema: {
+        learner_id: z.string().trim().min(1).max(200),
+      },
+    },
+    async ({ learner_id }) => {
+      try {
+        const context = await resolveTeacherContext();
+        if (!context) {
+          return toolError("teacher_context_unavailable", "The teacher context is unavailable.");
+        }
+        return toolResult(await buildEvidenceSummary(learner_id, context));
+      } catch (error) {
+        logToolFailure("build_evidence_summary", error);
+        return toolError("evidence_summary_failed", "Dira could not load this learner's evidence.");
+      }
+    },
+  );
+
+  server.registerTool(
+    "suggest_test",
+    {
+      title: "Suggest a learner activity",
+      description:
+        "For an explicitly selected learner in the server-resolved teacher's assigned classes, assess reviewed local observations and retrieve bounded guidance from the four approved education sources. The proposal is not saved unless accepted or rejected for regeneration.",
+      inputSchema: {
+        learner_id: z.string().trim().min(1).max(200),
+      },
+    },
+    async ({ learner_id }) => {
+      try {
+        const context = await resolveTeacherContext();
+        if (!context) {
+          return toolError("teacher_context_unavailable", "The teacher context is unavailable.");
+        }
+        return toolResult(await suggestTest(learner_id, context));
+      } catch (error) {
+        logToolFailure("suggest_test", error);
+        return toolError("suggestion_failed", "Dira could not prepare a test suggestion.");
+      }
+    },
+  );
+
+  server.registerTool(
+    "regenerate_test_suggestion",
+    {
+      title: "Reject a suggestion and prepare another",
+      description:
+        "Persist the current deterministic proposal as SUGGESTED (rejected for regeneration), then produce a replacement proposal for the explicitly selected learner.",
+      inputSchema: {
+        learner_id: z.string().trim().min(1).max(200),
+        submission_id: z.string().trim().min(1).max(200),
+        proposal_id: z.string().regex(/^[a-f0-9]{64}$/),
+        supersedes_test_id: z.string().trim().min(1).max(200).optional(),
+      },
+    },
+    async ({ learner_id, submission_id, proposal_id, supersedes_test_id }) => {
+      try {
+        const context = await resolveTeacherContext();
+        if (!context) {
+          return toolError("teacher_context_unavailable", "The teacher context is unavailable.");
+        }
+        return toolResult(
+          await regenerateSuggestion(
+            { learner_id, submission_id, proposal_id, supersedes_test_id },
+            context,
+          ),
+        );
+      } catch (error) {
+        logToolFailure("regenerate_test_suggestion", error);
+        if (error instanceof SuggestionPersistenceError) {
+          return toolError("suggestion_rejected", error.message);
+        }
+        return toolError("suggestion_regeneration_failed", "Dira could not regenerate this suggestion.");
+      }
+    },
+  );
+
+  server.registerTool(
+    "accept_suggested_test",
+    {
+      title: "Accept a proposed learner activity",
+      description:
+        "Save a proposed classroom test as ACCEPTED for an explicitly selected learner. A teacher-recorded linked outcome is required before it can become COMPLETED.",
+      inputSchema: {
+        learner_id: z.string().trim().min(1).max(200),
+        submission_id: z.string().trim().min(1).max(200),
+        proposal_id: z.string().regex(/^[a-f0-9]{64}$/),
+        planned_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        supersedes_test_id: z.string().trim().min(1).max(200).optional(),
+      },
+    },
+    async (input) => {
+      try {
+        const context = await resolveTeacherContext();
+        if (!context) {
+          return toolError("teacher_context_unavailable", "The teacher context is unavailable.");
+        }
+        return toolResult(await acceptSuggestion(input, context));
+      } catch (error) {
+        logToolFailure("accept_suggested_test", error);
+        if (error instanceof SuggestionPersistenceError) {
+          return toolError("suggestion_acceptance_rejected", error.message);
+        }
+        return toolError("suggestion_acceptance_failed", "Dira could not save the accepted test.");
+      }
+    },
+  );
+
+  server.registerTool(
+    "save_call_observation_drafts",
+    {
+      title: "Save observation drafts from a call transcript",
+      description:
+        "Save per-learner observation segments quoted from a processed call transcript as teacher-review drafts. Learner matching is done by the server; drafts are never real observations until the teacher confirms them.",
+      inputSchema: {
+        recording_id: z.string().uuid(),
+        segments: z
+          .array(
+            z.object({
+              segment_text: z.string().trim().min(1).max(4000),
+              mentioned_name: z.string().trim().max(100).optional(),
+              observation_type: z.enum(OBSERVATION_TYPES).optional(),
+            }),
+          )
+          .min(1)
+          .max(30),
+      },
+    },
+    async ({ recording_id, segments }) => {
+      try {
+        return toolResult(await saveCallObservationDrafts(recording_id, segments));
+      } catch (error) {
+        logToolFailure("save_call_observation_drafts", error);
+        if (error instanceof DraftError) {
+          return toolError("draft_save_rejected", error.message);
+        }
+        return toolError("draft_save_failed", "Dira could not save the observation drafts.");
       }
     },
   );

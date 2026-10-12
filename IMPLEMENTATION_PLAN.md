@@ -441,6 +441,105 @@ learner records.
   step remains blocked. Production login and multi-teacher authorization remain
   explicitly deferred and must not be implied by a successful single-teacher demo.
 
+### Phase 7 — Make agent and application work visible
+
+**Status:** Planned; no persistent agent activity log or viewer is implemented.
+
+**Goal:** Give the teacher/developer a clear, chronological, durable view of what
+triggered each scheduled-agent run, which actions the GLM agent selected, which Dira
+MCP tools it called, and what the application did to execute or reject those tool
+requests. The display must distinguish agent choices from deterministic application
+work without suggesting that the model performed database, policy, or provider work.
+
+**Likely files:** additive PostgreSQL migration and schema documentation; structured
+logging service under `lib/agent/`; instrumentation in
+`lib/agent/orchestrator.ts`, the Dira MCP tools, queue/dispatch services, model client,
+and scheduler trigger; an authorized read-only activity API; an Agent Activity page
+and desktop-sidebar entry; focused unit, integration, and UI tests.
+
+**Work**
+
+- Define a run record and ordered event records correlated by `run_id`, with event
+  IDs, timestamps, sequence/order, actor (`trigger`, `agent`, `mcp_client`,
+  `mcp_server`, or `application`), event/action name, parent event/tool-call ID,
+  outcome, duration where available, and a deliberately small safe summary.
+  Record trigger source and kind, model identifier, run status, start/end time, and
+  safe failure code at run level.
+- Instrument the real boundaries rather than inferring agent behavior from a final
+  summary:
+  - record when a manual or scheduler trigger is accepted/rejected and when a run
+    starts/ends;
+  - record model request/response completion as an operational boundary, and record
+    the agent's selected tool name and validated/denied outcome (not its private
+    chain-of-thought);
+  - record MCP discovery/invocation and correlate each invocation with the matching
+    tool call;
+  - emit child application events for the relevant deterministic work, such as
+    teacher-context resolution, schedule/eligibility validation, queue changes,
+    atomic job claim, and provider submission result. Include only counts and safe
+    status/error codes, never raw learner, teacher, calendar, phone, or transcript
+    content.
+- Make recording failure observable. Do not silently claim a complete audit trail
+  when events could not be persisted; define whether a run continues with an explicit
+  `logging_degraded` status or fails closed for the relevant operation. Keep event
+  writes bounded and avoid making logging availability create duplicate calls or
+  corrupt queue/dispatch transactions.
+- Add a read-only, paginated activity query scoped to the active demo teacher/run
+  context, with filtering by date, trigger, run status, and run ID. Apply the same
+  demo-mode restrictions as the existing unauthenticated single-teacher UI. Do not
+  expose an MCP or browser API that can create, update, or delete activity records.
+- Add an **Agent Activity** destination to the desktop navigation. On laptop/desktop,
+  place a compact eye-icon control at the bottom-left of the sidebar/navigation;
+  show the words **“Watch agent working”** on hover/focus as an accessible tooltip
+  and provide an accessible name even when the label is not visible. The control
+  opens the activity timeline/table. Preserve the existing mobile navigation layout;
+  do not force a long label into the mobile bottom bar.
+- Present a chronological run list/table with trigger, time, model, status, summary,
+  and duration. Allow a run to expand into ordered events. Style agent trigger/
+  decision/tool-selection events as the primary readable entries. Render the
+  application/MCP execution detail as subordinate, smaller orange entries nested
+  under the corresponding agent/tool event; use text labels/icons as well as colour
+  so the distinction remains accessible. Clearly show the chain from trigger ->
+  agent selection -> MCP tool call -> application validation/work -> result.
+- Handle no runs, a run in progress, partial/failed runs, missing child events,
+  degraded logging, and pagination explicitly. Refresh safely while a run is active
+  (bounded polling or an approved refresh mechanism); never represent an absent event
+  as success.
+- Redact credentials, authorization headers, provider payloads, private model
+  reasoning, raw learner/teacher content, telephone numbers, audio/transcripts, and
+  unnecessary calendar details before data reaches persistent logs. Store stable
+  tool/action names and safe structured outcomes, not free-form untrusted model text.
+- Document event meanings and limitations so a reader can tell which decisions were
+  made by the agent and which checks/actions belong to Dira's code. Do not market
+  tool selection alone as proof of safe or useful agency.
+
+**Dependencies:** Phase 6.2's scheduled agent and Dira MCP tool boundaries; existing
+database migration process; demo teacher-context scope. Production identity and
+multi-teacher authorization remain a separate prerequisite before enabling this
+viewer with real multi-teacher data.
+
+**Acceptance criteria**
+
+- Triggering a run produces a durable run record and ordered correlated events that
+  identify trigger, model, agent-selected tool(s), MCP invocation(s), deterministic
+  application work, outcome, duration, and safe errors.
+- For a queue-preparation run and a due-dispatch run, a reviewer can follow the
+  trigger -> agent tool choice -> MCP -> Dira validation/service work -> result
+  without relying on server console output or inferring behavior from model prose.
+- The UI distinguishes agent actions from application/MCP details using the agreed
+  primary-vs-smaller-orange hierarchy and accessible text/icon cues; keyboard focus
+  exposes the same “Watch agent working” label as hover.
+- The desktop sidebar control is anchored at the bottom-left and opens the activity
+  viewer. Mobile navigation remains usable and does not gain a crowded long-label
+  item.
+- Unauthorized or out-of-scope activity reads are rejected; the demo view cannot
+  leak another teacher's rows, secrets, or learner/call content.
+- Tests cover each event boundary, parent/run correlation, ordering, duplicate/retry
+  behavior, redaction, partial and failed runs, storage failure, empty history,
+  pagination, access control, and responsive/accessibility behavior.
+- Database/tool-call behavior remains authoritative and safe if activity logging
+  fails; the UI explicitly identifies incomplete/degraded audit trails.
+
 ## Should Dira write school periods to teachers' work calendars?
 
 **Recommendation: not for the call-scheduling MVP.** Dira already has recurring
@@ -892,6 +991,7 @@ actual configuration names are implemented.
 | 5 | P1 | Phase 4: transcription and observation save | Connects phone audio to the already working teacher-reviewed persistence path. |
 | 6 | P1 | Phase 5: UI, operations, and full verification | Makes the complete workflow testable, supportable, and demonstrable. |
 | 7 | P1 | Phase 6.2: Dira MCP server, agent, and scheduler trigger | Connects reusable Dira tools to the scheduled agent while keeping the timer and LLM out of authoritative scheduling and safety decisions. |
+| 8 | P1 | Phase 7: visible agent/application activity log | Makes each trigger, agent tool choice, MCP call, and Dira-side execution inspectable as separate, correlated events. |
 
 ## Decisions/blockers to close before implementation
 

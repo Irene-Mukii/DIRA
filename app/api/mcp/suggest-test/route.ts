@@ -1,37 +1,107 @@
-// POST /api/mcp/suggest-test - Suggests a low-prep classroom activity based on learner observations
-// Request body: { learner_id, teacher_id, school_id }
-// Returns: hypothesis, cited_observations, suggested_activity, what_to_log_afterward, etc.
-
 import { NextRequest, NextResponse } from "next/server";
-import { suggestTest, type SuggestTestContext } from "@/lib/mcp-tools/suggestTest";
+import { z } from "zod/v4";
+import { resolveTeacherContext } from "@/lib/auth/teacher-context";
+import {
+  acceptSuggestion,
+  regenerateSuggestion,
+  suggestTest,
+  SuggestionPersistenceError,
+} from "@/lib/mcp-tools/suggestTest";
+
+export const runtime = "nodejs";
+
+const requestSchema = z.discriminatedUnion("action", [
+  z.object({
+    action: z.literal("suggest"),
+    learner_id: z.string().trim().min(1).max(200),
+  }),
+  z.object({
+    action: z.literal("accept"),
+    learner_id: z.string().trim().min(1).max(200),
+    submission_id: z.string().trim().min(1).max(200),
+    proposal_id: z.string().regex(/^[a-f0-9]{64}$/),
+    planned_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    supersedes_test_id: z.string().trim().min(1).max(200).optional(),
+  }),
+  z.object({
+    action: z.literal("regenerate"),
+    learner_id: z.string().trim().min(1).max(200),
+    submission_id: z.string().trim().min(1).max(200),
+    proposal_id: z.string().regex(/^[a-f0-9]{64}$/),
+    supersedes_test_id: z.string().trim().min(1).max(200).optional(),
+  }),
+]);
 
 export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json();
-    const learnerId = body.learner_id?.trim();
-    const teacherId = body.teacher_id?.trim();
-    const schoolId = body.school_id?.trim();
+  const context = await resolveTeacherContext();
+  if (!context) {
+    return NextResponse.json(
+      { error: "An authenticated teacher context is required" },
+      { status: 503 },
+    );
+  }
 
-    if (!learnerId || !teacherId || !schoolId) {
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json(
+      { error: "Request body must be valid JSON" },
+      { status: 400 },
+    );
+  }
+  const parsed = requestSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: "Invalid suggestion request", details: parsed.error.flatten() },
+      { status: 400 },
+    );
+  }
+
+  try {
+    const input = parsed.data;
+    if (input.action === "suggest") {
+      return NextResponse.json(await suggestTest(input.learner_id, context));
+    }
+    if (input.action === "regenerate") {
       return NextResponse.json(
-        { error: "BAD_REQUEST", message: "learner_id, teacher_id, and school_id are required" },
-        { status: 400 }
+        await regenerateSuggestion(
+          {
+            learner_id: input.learner_id,
+            submission_id: input.submission_id,
+            proposal_id: input.proposal_id,
+            supersedes_test_id: input.supersedes_test_id,
+          },
+          context,
+        ),
       );
     }
-
-    const context: SuggestTestContext = { teacher_id: teacherId, school_id: schoolId };
-    const result = await suggestTest(learnerId, context);
-
-    if (!result.ok) {
-      return NextResponse.json(result, { status: 400 });
-    }
-
-    return NextResponse.json(result, { status: 200 });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown error";
     return NextResponse.json(
-      { error: "INTERNAL_ERROR", message },
-      { status: 500 }
+      await acceptSuggestion(
+        {
+          learner_id: input.learner_id,
+          submission_id: input.submission_id,
+          planned_date: input.planned_date,
+          proposal_id: input.proposal_id,
+          supersedes_test_id: input.supersedes_test_id,
+        },
+        context,
+      ),
+      { status: 201 },
+    );
+  } catch (error) {
+    if (error instanceof SuggestionPersistenceError) {
+      return NextResponse.json(
+        { error: error.message },
+        { status: error.status },
+      );
+    }
+    console.error("Evidence test suggestion request failed:", {
+      errorName: error instanceof Error ? error.name : "UnknownError",
+    });
+    return NextResponse.json(
+      { error: "Evidence test suggestion request failed" },
+      { status: 500 },
     );
   }
 }

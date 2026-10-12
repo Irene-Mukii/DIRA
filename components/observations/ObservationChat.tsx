@@ -171,12 +171,6 @@ export default function ObservationChat({
           : message
       )).filter((message) => message.id !== `error-${submissionId}`));
       pendingSubmission.current = null;
-      setMessages((current) => [...current, {
-        id: crypto.randomUUID(),
-        type: "saved",
-        content: "Observation saved.",
-        timestamp: new Date().toISOString(),
-      }]);
       return true;
     } catch (error) {
       setMessages((current) => {

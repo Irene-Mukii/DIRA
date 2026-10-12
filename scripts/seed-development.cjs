@@ -18,6 +18,8 @@ const NULLABLE_COLUMNS = new Set([
   "linked_test_id",
   "observed_outcome",
   "outcome_observation_id",
+  "accepted_at",
+  "completed_at",
   "reviewed_at",
   "review_comments",
 ]);
@@ -142,6 +144,8 @@ const TABLES = [
       "observed_outcome",
       "outcome_observation_id",
       "status",
+      "accepted_at",
+      "completed_at",
     ],
     keys: ["test_id"],
   },
@@ -242,6 +246,10 @@ function readDataset(inputDir, definition) {
   for (const [rowIndex, row] of rows.entries()) {
     for (const column of definition.columns) {
       if (!(column in row)) {
+        if (NULLABLE_COLUMNS.has(column)) {
+          row[column] = "";
+          continue;
+        }
         throw new Error(`${definition.file}.csv is missing required column ${column}.`);
       }
       if (!row[column] && !NULLABLE_COLUMNS.has(column)) {
@@ -334,6 +342,28 @@ function relationshipRows(rows, column) {
   ));
 }
 
+function normalizeActivityTestStatuses(rows) {
+  for (const row of rows) {
+    const status = row.status.trim().toUpperCase();
+    if (status === "PENDING" || status === "IN PROGRESS") {
+      row.status = "ACCEPTED";
+    } else if (status === "COMPLETED" || status === "ACCEPTED" || status === "SUGGESTED") {
+      row.status = status;
+    } else {
+      throw new Error(`Unsupported activity-test status "${row.status}" in development data.`);
+    }
+    if (row.status === "ACCEPTED") {
+      row.accepted_at ||= `${row.activity_date}T00:00:00Z`;
+    } else if (row.status === "COMPLETED") {
+      row.accepted_at ||= `${row.activity_date}T00:00:00Z`;
+      row.completed_at ||= `${row.activity_date}T00:00:00Z`;
+    } else {
+      row.accepted_at = "";
+      row.completed_at = "";
+    }
+  }
+}
+
 async function insertRelationships(client, table, columns, rows) {
   if (rows.length === 0) return;
   const values = [];
@@ -375,6 +405,7 @@ async function main() {
   const datasets = new Map(
     TABLES.map((definition) => [definition.file, readDataset(inputDir, definition)]),
   );
+  normalizeActivityTestStatuses(datasets.get("activity_tests"));
   const connection = new URL(connectionString);
   if (args.includes("--check-only")) {
     for (const definition of TABLES) {

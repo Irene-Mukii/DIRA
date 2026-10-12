@@ -198,10 +198,57 @@ test("does not repeat a suggestion while an open test already cites the signal",
     test_id: "TEST001",
     suggested_activity: "Rotating-role group challenge",
     activity_date: "2026-05-13",
-    status: "In progress",
+    status: "ACCEPTED",
     evidence_ids: ["OBS001"],
   }];
   const result = buildSuggestion("L001", rows, priorTests);
+
+  assert.equal(result.ok, false);
+  if (!result.ok) assert.equal(result.status, "insufficient_evidence");
+});
+
+test("proposes an alternate activity after a teacher requests regeneration", () => {
+  const rows = [
+    observation("OBS001"),
+    observation("OBS002", {
+      observed_at: new Date("2026-05-12T09:00:00Z"),
+      observation_date: "2026-05-12",
+    }),
+  ];
+  const initial = buildSuggestion("L001", rows, []);
+  const regenerated = buildSuggestion("L001", rows, [{
+    test_id: "TEST001",
+    suggested_activity: "Rotating-role group challenge",
+    activity_date: "2026-05-13",
+    status: "SUGGESTED",
+    evidence_ids: ["OBS001", "OBS002"],
+  }]);
+
+  assert.equal(initial.ok, true);
+  assert.equal(regenerated.ok, true);
+  if (initial.ok && regenerated.ok) {
+    assert.notEqual(
+      regenerated.suggested_activity.title,
+      initial.suggested_activity.title,
+    );
+  }
+});
+
+test("an accepted test suppresses another proposal for the same evidence", () => {
+  const rows = [
+    observation("OBS001"),
+    observation("OBS002", {
+      observed_at: new Date("2026-05-12T09:00:00Z"),
+      observation_date: "2026-05-12",
+    }),
+  ];
+  const result = buildSuggestion("L001", rows, [{
+    test_id: "TEST001",
+    suggested_activity: "Rotating-role group challenge",
+    activity_date: "2026-05-13",
+    status: "ACCEPTED",
+    evidence_ids: ["OBS001"],
+  }]);
 
   assert.equal(result.ok, false);
   if (!result.ok) assert.equal(result.status, "insufficient_evidence");
@@ -257,22 +304,6 @@ test("handles inconsistent date formats in observations", () => {
   assert.equal(signal.distinct_dates, 3);
 });
 
-test("handles missing teacher_review_status gracefully", () => {
-  const rows = [
-    observation("OBS001", { teacher_review_status: "not_required" as const }),
-    observation("OBS002", {
-      teacher_review_status: "confirmed" as const,
-      observed_at: new Date("2026-05-12T09:00:00Z"),
-    }),
-  ];
-  const groups = groupObservationsByType(rows);
-  const participationGroup = groups.find((g) => g.observation_type === "participation");
-
-  assert.ok(participationGroup);
-  assert.deepEqual(participationGroup.eligible_observation_ids.sort(), ["OBS001", "OBS002"]);
-  assert.deepEqual(participationGroup.awaiting_review_ids, []);
-});
-
 test("handles null and empty activity_context variations", () => {
   const rows = [
     observation("OBS001", { activity_context: "Group task" }),
@@ -296,17 +327,17 @@ test("handles null and empty activity_context variations", () => {
   assert.equal(signal.distinct_contexts, 1);
 });
 
-test("verifies historical evidence is not excluded by current-year filter logic", () => {
-  const priorYearObs = observation("OBS001", {
-    observed_at: new Date("2025-05-04T09:00:00Z"),
-    observation_date: "2025-05-04",
-  });
-  const currentYearObs = observation("OBS002", {
-    observed_at: new Date("2026-05-04T09:00:00Z"),
-    observation_date: "2026-05-04",
-  });
-  const rows = [priorYearObs, currentYearObs];
-
+test("includes historical evidence alongside current-year observations", () => {
+  const rows = [
+    observation("OBS001", {
+      observed_at: new Date("2025-05-04T09:00:00Z"),
+      observation_date: "2025-05-04",
+    }),
+    observation("OBS002", {
+      observed_at: new Date("2026-05-04T09:00:00Z"),
+      observation_date: "2026-05-04",
+    }),
+  ];
   const signals = findUnderCorroboratedSignals(rows);
   const signal = signals.find((item) => item.observation_type === "participation");
 

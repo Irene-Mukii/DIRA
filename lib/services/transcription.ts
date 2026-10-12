@@ -1,5 +1,4 @@
-// Real-time transcription service architecture
-// This module provides the interface for integrating with STT providers (Whissle, Web Speech API, etc.)
+// Provider-neutral interface for a future real-time transcription service.
 export interface TranscriptionResult {
   text: string;
   isFinal: boolean;
