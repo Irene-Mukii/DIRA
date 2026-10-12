@@ -1,5 +1,5 @@
 import type { ObservationType } from "../db/schema";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 export interface SuggestTestContext {
 	teacher_id: string;
@@ -675,4 +675,115 @@ export async function acceptSuggestion(
 	} finally {
 		client.release();
 	}
+}
+
+export interface RecordTestOutcomeInput {
+	test_id: string;
+	learner_id: string;
+	teacher_id: string;
+	school_id: string;
+	outcome_observation: string;
+	outcome_observation_id: string;
+	submission_id: string;
+}
+
+export interface RecordTestOutcomeResult {
+	test_id: string;
+	learner_id: string;
+	status: "Completed";
+	outcome_observation_id: string;
+}
+
+export async function recordTestOutcome(
+	input: RecordTestOutcomeInput,
+): Promise<RecordTestOutcomeResult> {
+	const testId = input.test_id.trim();
+	const learnerId = input.learner_id.trim();
+	const teacherId = input.teacher_id.trim();
+	const schoolId = input.school_id.trim();
+	const outcomeObservationId = input.outcome_observation_id.trim();
+	const submissionId = input.submission_id.trim();
+
+	if (!testId || !learnerId || !teacherId || !schoolId || !outcomeObservationId || !submissionId) {
+		throw new SuggestionPersistenceError("test_id, learner_id, teacher_id, school_id, outcome_observation_id, and submission_id are required", 400);
+	}
+
+	const { pool } = await import("../db/client");
+
+	const test = await pool.query<{
+		test_id: string;
+		learner_id: string;
+		conducting_teacher_id: string;
+		status: string;
+	}>(
+		`SELECT test_id, learner_id, conducting_teacher_id, status
+		 FROM activity_tests
+		 WHERE test_id = $1 AND learner_id = $2 AND conducting_teacher_id = $3`,
+		[testId, learnerId, teacherId],
+	);
+	if (!test.rowCount) {
+		throw new SuggestionPersistenceError("Test not found or not authorized for this teacher", 404);
+	}
+	if (test.rows[0].status === "Completed") {
+		throw new SuggestionPersistenceError("Test is already completed", 409);
+	}
+
+	const outcomeObs = await pool.query<{
+		observation_id: string;
+		learner_id: string;
+		linked_test_id: string | null;
+	}>(
+		`SELECT observation_id, learner_id, linked_test_id
+		 FROM observations
+		 WHERE observation_id = $1 AND learner_id = $2`,
+		[outcomeObservationId, learnerId],
+	);
+	if (!outcomeObs.rowCount) {
+		throw new SuggestionPersistenceError("Outcome observation not found for this learner", 404);
+	}
+	if (outcomeObs.rows[0].linked_test_id && outcomeObs.rows[0].linked_test_id !== testId) {
+		throw new SuggestionPersistenceError("Outcome observation is already linked to a different test", 409);
+	}
+
+	const client = await pool.connect();
+	try {
+		await client.query("BEGIN");
+
+		await client.query(
+			`UPDATE observations
+			 SET linked_test_id = $1
+			 WHERE observation_id = $2 AND learner_id = $3`,
+			[testId, outcomeObservationId, learnerId],
+		);
+
+		await client.query(
+			`INSERT INTO activity_test_observations (test_id, learner_id, observation_id)
+			 VALUES ($1, $2, $3)
+			 ON CONFLICT DO NOTHING`,
+			[testId, learnerId, outcomeObservationId],
+		);
+
+		await client.query(
+			`UPDATE activity_tests
+			 SET status = 'Completed',
+				 observed_outcome = $1,
+				 outcome_observation_id = $2
+			 WHERE test_id = $3 AND learner_id = $4`,
+			[input.outcome_observation, outcomeObservationId, testId, learnerId],
+		);
+
+		await client.query("COMMIT");
+	} catch (error) {
+		await client.query("ROLLBACK");
+		throw error;
+	} finally {
+		client.release();
+	}
+
+	return {
+		test_id: testId,
+		learner_id: learnerId,
+		status: "Completed",
+		outcome_observation_id: outcomeObservationId,
+	};
 }
