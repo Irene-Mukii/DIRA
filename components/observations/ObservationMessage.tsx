@@ -26,14 +26,14 @@ export default function ObservationMessage({ message, onReview }: ObservationMes
   const [isSaving, setIsSaving] = useState(false);
   const [showReviewUI, setShowReviewUI] = useState(false);
 
-  const needsReview = message.type === "teacher" && 
-    message.reviewStatus && 
-    message.reviewStatus !== "not_required" && 
+  const needsReview = message.type === "teacher" &&
+    message.reviewStatus &&
+    message.reviewStatus !== "not_required" &&
     onReview;
 
   if (message.type === "teacher") {
     return (
-      <div 
+      <div
         className="flex justify-end"
         onMouseEnter={() => needsReview && setShowReviewUI(true)}
         onMouseLeave={() => !isEditing && setShowReviewUI(false)}
