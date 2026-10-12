@@ -8,7 +8,7 @@
 |---|---|---|---|---|
 | GLM-5.3 hosted API | Reasoning for test suggestions and Evidence Card language | Ordinary model API | Selected in revised architecture; provider/API details to confirm | Credentials, model ID, endpoint, latency, errors, token/cost limits |
 | PostgreSQL | Durable learner, observation, test, outcome and related records | Database connection from server-side code | Core storage choice | Schema/migrations, constraints, persistence, backups/dev resets |
-| Whissle | Transcribe submitted in-app audio and, if implemented, phone-captured audio | Ordinary speech-to-text API unless a separate MCP server is truly used | Selected provider; account/endpoint/audio details to confirm | Supported format, maximum duration/size, confidence metadata if provided, timeout and error behaviour |
+| OpenAI Audio Transcriptions | Transcribe completed phone-call recordings for the MVP | Ordinary HTTPS API; not MCP | Implemented as an MVP integration; sends audio outside DIRA-controlled infrastructure | API key, account access, supported recording format and operational/data-handling review |
 | Africa's Talking SMS | Weekly focus reminders/notifications | Ordinary API unless a separate MCP server is truly used | Selected provider | Credentials, sender/short-code requirements, delivery status/callbacks, Kenya account permissions |
 | Africa's Talking Voice | Outbound teacher follow-up call | Ordinary server-side voice API; not MCP | Request adapter, non-production demo-gated dispatcher, and teacher-scoped development status view implemented; no live call verified | Account credentials, caller ID, sandbox/live behavior, provider callbacks/status authentication, recording/audio retrieval, account restrictions and teacher consent |
 | Keeper.sh calendar MCP | Unified calendar context for follow-up | **Borrowed external MCP server** | Selected/planned; not complete until actual call succeeds | OAuth 2.1 flow for hosted endpoint, Streamable HTTP transport, MCP discovery/invocation, limits and returned event data |
@@ -68,17 +68,19 @@ Do not assume GLM-5.3 has browsing capability. Choose and verify a separate API/
 
 Do not create a dedicated PostgreSQL table for the educational-source catalogue/content in the current scope. The system should query externally at suggestion time. A future scope addition may store source metadata, canonical URL, publisher/title, publication/update date, retrieval timestamp, short excerpt or content pointer, licence/usage notes and search indexes after a separate data-model decision.
 
-## 4. Whissle speech-to-text
+## 4. Speech-to-text (MVP: OpenAI; replace before go-live)
 
 ### In-app voice flow
 
-`Browser recorder → server-side upload/forward → Whissle transcription → transcript review/validation → log_observation MCP tool → PostgreSQL`.
+`Africa's Talking recording → server-side download → OpenAI Audio Transcriptions API → transcript → DIRA agent drafts → teacher review → PostgreSQL`.
 
-Use the actual API contract for audio file/container/codec, size, duration and response fields. Do not assume Whissle provides confidence scores unless its endpoint returns them. Preserve the distinction between original audio/reference and transcript where allowed. If transcription is ambiguous about identity, negation or key numbers, ask the teacher to confirm before saving.
+The implementation uses `POST https://api.openai.com/v1/audio/transcriptions` with `OPENAI_API_KEY` and defaults to model `gpt-transcribe` (override with optional `OPENAI_STT_MODEL`). It expects a JSON `text` result. The current API guide lists a 25 MB maximum and MP3, MP4, MPEG, MPGA, M4A, WAV and WebM input. The server rejects unsupported types and files above the limit rather than fabricating or silently altering a transcript.
+
+**MVP-only security exception:** this sends teacher recordings that may contain learner information to OpenAI. Do not use this as the go-live transcription architecture. Before go-live, replace it with a security-reviewed, self-hosted open-weight transcription model in infrastructure DIRA controls, and verify data handling, access controls, retention and accuracy. Never expose the API key to browser code or logs.
 
 ### Failures
 
-A Whissle timeout/unavailability must not produce a fake transcript or a saved observation. Show an actionable message and preserve the recording or transcript draft where feasible. Retries must not duplicate the resulting observation.
+An OpenAI timeout/unavailability must not produce a fake transcript or a saved observation. Failures are recorded and retried within the existing attempt limit; retries must not duplicate drafts. The transcription provider name is stored with the transcript and copied to a confirmed observation.
 
 ## 5. Africa's Talking SMS
 
@@ -97,22 +99,19 @@ documents a `call` operation; use a genuine MCP server only if one is independen
 verified and deliberately selected.
 
 The server-side adapter uses the provider's official Node SDK request contract:
-`POST https://voice.africastalking.com/call` (or the sandbox host), URL-encoded
+`POST https://voice.africastalking.com/call`, URL-encoded
 `username`, `from`, `to`, and `clientRequestId`, with the `apikey` header. This
 request format is based on the official
 [Africa's Talking Node.js SDK](https://github.com/AfricasTalkingLtd/africastalking-node.js).
-The current Dira code only records an accepted HTTP submission, not ringing,
-answering, completion, or a recording. Provider response formats and callbacks still
-need to be confirmed using the project's actual account before extending lifecycle
-claims.
+Provider acceptance is not proof of ringing, answering, completion, or successful
+recording. Verify those states through callbacks from the project's actual account.
 
 For safety, the current dispatcher refuses production execution and requires explicit
 local demo mode plus server-side credentials and a single configured demo destination.
-It accepts no destination from a browser or teacher record. A protected scheduler
-endpoint submits at most one due call per invocation; do not schedule it until the
-Phase 3 migration and a controlled, manually observed test are complete. The voice
-callback route returns only the fixed teacher greeting. It does not record audio,
-transcribe, or save observations.
+It accepts no destination from a browser or teacher record. The 07:00 queue job
+prepares eligible work; it does not dispatch calls. The protected dispatcher submits
+at most one due call per invocation. The development-only manual demo queue action
+is separate from dispatch; dispatch places a real, potentially chargeable call.
 
 The `/follow-up-calls` page shows the configured development teacher's own queued and
 provider-submission records plus observations awaiting teacher review. It deliberately
@@ -122,16 +121,46 @@ login because teacher authentication is not implemented; it is unavailable in pr
 An authorised-staff operations console is deferred until the application has an
 authenticated staff role.
 
-Caller ID alone is not proof of teacher identity. Authenticate the teacher through an approved challenge/context before associating a transcript with a learner. The voice call initiates/captures audio; Whissle transcribes it; Dira validates and persists it through `log_observation`.
+Caller ID alone is not proof of teacher identity. Authenticate the teacher through an approved challenge/context before associating a transcript with a learner. The voice call captures audio; the MVP sends it to OpenAI for transcription; Dira validates and persists teacher-confirmed observations through its existing flow.
 
 The teacher-review persistence lifecycle is implemented separately from the
 evidence-oriented `verification_status`: voice-originated observations can await
 review as `recorded`, then become `confirmed` or `updated`. Original wording and
 review edits are retained in PostgreSQL review history. Compact chat controls and
 expanded learner-page controls are available in the development demo context only.
-This does not mean phone audio capture or Whissle transcription is working: the
-Africa's Talking callback currently only plays the greeting, and both provider
-recording capability and Whissle's actual API contract still need verification.
+The OpenAI transcription request is implemented, but has not been verified against a configured OpenAI account. Africa's Talking recording delivery and download authentication must also be verified with the actual account before relying on the complete flow.
+
+### Voice call lifecycle (implemented, provider contract unverified)
+
+Queue item → `teacher_calls` (provider `sessionId`) → `call_recordings` → OpenAI
+transcript → agent calls MCP tool `save_call_observation_drafts` →
+`observation_drafts` → teacher confirms at `/call-drafts` (calls `log_observation`).
+
+- The voice-instructions XML puts `<Say>` inside `<Record>`, with the protected
+  recording callback URL on `<Record callbackUrl>`. The recording callback replies
+  with XML while the call is active and an empty `<Response>` when inactive. This
+  follows the supplied partial-recording contract; a real call still needs to verify
+  that the account invokes both callbacks and returns the expected form fields.
+- Callback diagnostics report status, content type, XML size, action presence, and
+  non-sensitive callback metadata only. Do not share callback URLs containing the
+  path secret, recordings, or transcripts when reporting a failure.
+- Routes (set the secret as a path segment; the dashboard rejects `?token=`):
+  `POST /api/voice/cb/<VOICE_CALLBACK_SECRET>/teacher-follow-up` (call instructions: greeting + `<Record>`),
+  `.../recording` (set automatically in the `<Record callbackUrl>`), `.../events` (optional;
+  the account shows N/A). Legacy `?token=` routes under `/api/voice/*` still work.
+- Voice env: `AFRICASTALKING_USERNAME_VOICE`, `AFRICASTALKING_API_KEY_VOICE`,
+  `AFRICASTALKING_VOICE_FROM`, always production endpoint. `DIRA_PUBLIC_BASE_URL` is the public origin.
+- Workers: `npm run follow-up:queue` (07:00 prepare only), `follow-up:dispatch`
+  (manual), `follow-up:recordings` (retry transcription/processing).
+- Development UI: `/follow-up-calls` offers **Queue demo call now** only when demo mode
+  and its explicit destination are configured. Queueing is idempotent and never calls
+  by itself; the separate dispatch button submits a real, potentially chargeable call
+  to that demo destination. It is disabled in production and does not create a calendar
+  entry or relax the normal scheduled-call eligibility checks.
+- Demo mode (`DIRA_DEMO_CALL_TEST_MODE`/`DIRA_VOICE_DEMO_MODE`) dials only the demo number and is
+  flagged `is_demo`; real mode needs `teachers.phone_e164` and `voice_consent_at`.
+- Unverified: OpenAI account/key availability, recording download auth, `/call` response shape, and live callback behavior.
+- Learner matching is deterministic; ambiguous or unknown names stay `needs_learner`.
 
 ## 7. PostgreSQL
 
@@ -155,7 +184,7 @@ The final environment-variable names must follow actual code and provider docume
 
 - PostgreSQL connection.
 - Hosted GLM API key/model ID.
-- Whissle API credentials/configuration.
+- `OPENAI_API_KEY` for MVP transcription and optional `OPENAI_STT_MODEL`. Replace OpenAI with a security-reviewed, self-hosted open-weight model before go-live.
 - Africa's Talking SMS and Voice credentials/configuration.
 - Keeper endpoint and authentication/OAuth configuration for the selected hosted/self-hosted mode.
 - Educational retrieval adapter credentials/configuration and timeout.

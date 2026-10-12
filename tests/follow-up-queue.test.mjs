@@ -48,7 +48,13 @@ async function assertRequiredSchema() {
        to_regclass('public.school_calendar') AS school_calendar,
        to_regclass('public.school_closure_coverage') AS closure_coverage,
        to_regclass('public.school_closures') AS school_closures,
-       to_regclass('public.teacher_follow_up_jobs') AS follow_up_jobs`,
+       to_regclass('public.teacher_follow_up_jobs') AS follow_up_jobs,
+       (SELECT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_schema = 'public'
+            AND table_name = 'teacher_follow_up_jobs'
+            AND column_name = 'is_manual_demo'
+        )) AS manual_demo_column`,
   );
   const tables = result.rows[0];
   const missing = Object.entries(tables)
@@ -58,6 +64,11 @@ async function assertRequiredSchema() {
   if (missing.length > 0) {
     throw new Error(
       `Development database is missing required tables: ${missing.join(", ")}. Apply the queue/call migrations before running these tests.`,
+    );
+  }
+  if (!tables.manual_demo_column) {
+    throw new Error(
+      "Development database is missing db/007_manual_demo_follow_up_jobs.sql. Apply the manual demo call migration before running these tests.",
     );
   }
 }
@@ -117,9 +128,24 @@ async function insertFixture() {
 }
 
 async function cleanupFixture() {
+  // Call records reference the job, so remove them first (children before parents).
   await pool.query(
-    "DELETE FROM teacher_follow_up_jobs WHERE calendar_entry_id = $1",
-    [fixture.calendarEntryId],
+    `DELETE FROM call_events WHERE call_id IN (
+       SELECT call_id FROM teacher_calls WHERE follow_up_job_id IN (
+         SELECT follow_up_job_id FROM teacher_follow_up_jobs
+         WHERE calendar_entry_id = $1 OR (school_id = $2 AND teacher_id = $3 AND is_manual_demo)))`,
+    [fixture.calendarEntryId, fixture.schoolId, fixture.teacherId],
+  );
+  await pool.query(
+    `DELETE FROM teacher_calls WHERE follow_up_job_id IN (
+       SELECT follow_up_job_id FROM teacher_follow_up_jobs
+       WHERE calendar_entry_id = $1 OR (school_id = $2 AND teacher_id = $3 AND is_manual_demo))`,
+    [fixture.calendarEntryId, fixture.schoolId, fixture.teacherId],
+  );
+  await pool.query(
+    `DELETE FROM teacher_follow_up_jobs
+     WHERE calendar_entry_id = $1 OR (school_id = $2 AND teacher_id = $3 AND is_manual_demo)`,
+    [fixture.calendarEntryId, fixture.schoolId, fixture.teacherId],
   );
   await pool.query(
     "DELETE FROM school_closure_coverage WHERE school_id = $1",
@@ -255,5 +281,46 @@ describe("follow-up queue and dispatch (local development PostgreSQL)", () => {
       status: "provider_accepted",
       attempt_count: 1,
     });
+  });
+
+  it("queues one immediate demo job idempotently and dispatches only when explicitly requested", async () => {
+    const { queueManualDemoFollowUp } = await import(
+      "../lib/services/follow-up-queue.ts"
+    );
+    const context = {
+      teacher_id: fixture.teacherId,
+      school_id: fixture.schoolId,
+    };
+    const first = await queueManualDemoFollowUp(context, fixture.mondayAfterClass);
+    const repeated = await queueManualDemoFollowUp(context, fixture.mondayAfterClass);
+
+    expect(repeated.follow_up_job_id).toBe(first.follow_up_job_id);
+    expect(first.already_queued).toBe(false);
+    expect(repeated.already_queued).toBe(true);
+    expect(provider.initiateAfricaTalkingCall).toHaveBeenCalledTimes(1);
+
+    const stored = await pool.query(
+      `SELECT calendar_entry_id, is_manual_demo, status, scheduled_end_at
+       FROM teacher_follow_up_jobs WHERE follow_up_job_id = $1`,
+      [first.follow_up_job_id],
+    );
+    expect(stored.rows[0]).toMatchObject({
+      calendar_entry_id: null,
+      is_manual_demo: true,
+      status: "queued",
+      scheduled_end_at: fixture.mondayAfterClass,
+    });
+
+    const result = await dispatchOneDueFollowUp(
+      fixture.mondayAfterClass,
+      context,
+      first.follow_up_job_id,
+    );
+    expect(result).toMatchObject({
+      follow_up_job_id: first.follow_up_job_id,
+      status: "provider_accepted",
+      is_demo: true,
+    });
+    expect(provider.initiateAfricaTalkingCall).toHaveBeenCalledTimes(2);
   });
 });

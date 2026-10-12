@@ -268,3 +268,80 @@ test("does not invent an activity for an unmapped observation type", () => {
   assert.equal(result.ok, false);
   if (!result.ok) assert.equal(result.status, "no_suitable_activity");
 });
+
+test("handles paraphrased duplicates as distinct observations", () => {
+  const rows = [
+    observation("OBS001", { original_observation: "Organized the group activity and assigned roles." }),
+    observation("OBS002", {
+      original_observation: "Led the group task by giving everyone a role.",
+      teacher_id: "T002",
+      observed_at: new Date("2026-05-12T09:00:00Z"),
+    }),
+    observation("OBS003", {
+      original_observation: "Took charge of the group and delegated tasks.",
+      observed_at: new Date("2026-05-20T09:00:00Z"),
+    }),
+  ];
+  const signals = findUnderCorroboratedSignals(rows);
+  const signal = signals.find((item) => item.observation_type === "participation");
+
+  assert.ok(signal);
+  assert.equal(signal.duplicate_observation_ids.length, 0);
+  assert.equal(signal.observation_ids.length, 3);
+  assert.equal(signal.variation_observation_ids.length, 3);
+});
+
+test("handles inconsistent date formats in observations", () => {
+  const rows = [
+    observation("OBS001", { observed_at: "2026-05-04T09:00:00Z" }),
+    observation("OBS002", { observed_at: "2026-05-12T09:00:00Z" }),
+    observation("OBS003", { observed_at: new Date("2026-05-20T09:00:00Z") }),
+  ];
+  const signals = findUnderCorroboratedSignals(rows);
+  const signal = signals.find((item) => item.observation_type === "participation");
+
+  assert.ok(signal);
+  assert.equal(signal.distinct_dates, 3);
+});
+
+test("handles null and empty activity_context variations", () => {
+  const rows = [
+    observation("OBS001", { activity_context: "Group task" }),
+    observation("OBS002", {
+      activity_context: "group task",
+      observed_at: new Date("2026-05-12T09:00:00Z"),
+    }),
+    observation("OBS003", {
+      activity_context: null,
+      observed_at: new Date("2026-05-20T09:00:00Z"),
+    }),
+    observation("OBS004", {
+      activity_context: "",
+      observed_at: new Date("2026-05-25T09:00:00Z"),
+    }),
+  ];
+  const signals = findUnderCorroboratedSignals(rows);
+  const signal = signals.find((item) => item.observation_type === "participation");
+
+  assert.ok(signal);
+  assert.equal(signal.distinct_contexts, 1);
+});
+
+test("includes historical evidence alongside current-year observations", () => {
+  const rows = [
+    observation("OBS001", {
+      observed_at: new Date("2025-05-04T09:00:00Z"),
+      observation_date: "2025-05-04",
+    }),
+    observation("OBS002", {
+      observed_at: new Date("2026-05-04T09:00:00Z"),
+      observation_date: "2026-05-04",
+    }),
+  ];
+  const signals = findUnderCorroboratedSignals(rows);
+  const signal = signals.find((item) => item.observation_type === "participation");
+
+  assert.ok(signal);
+  assert.equal(signal.distinct_dates, 2);
+  assert.deepEqual(signal.observation_ids.sort(), ["OBS001", "OBS002"]);
+});

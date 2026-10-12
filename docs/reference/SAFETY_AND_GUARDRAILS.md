@@ -39,7 +39,9 @@ Capture as applicable: learner ID, authenticated teacher/observer ID, observer r
 
 ### Transcription quality
 
-If uncertainty affects learner identity, negation, counts, outcomes or a materially important detail, ask the teacher to confirm before saving. Do not assume every Whissle endpoint returns confidence scores; use only returned fields. Failure to transcribe must not create a guessed observation.
+If uncertainty affects learner identity, negation, counts, outcomes or a materially important detail, ask the teacher to confirm before saving. Do not assume the transcription API returns confidence scores; use only returned fields. Failure to transcribe must not create a guessed observation.
+
+**MVP transcription security exception:** phone recordings may contain learner information and are sent to OpenAI's hosted transcription API. Keep the API key server-side, minimize retained audio, and do not enable this as the go-live architecture. Before go-live, replace it with a security-reviewed, self-hosted open-weight transcription model in DIRA-controlled infrastructure.
 
 ### Duplicate and retry safety
 
@@ -88,7 +90,7 @@ The source list in the team's materials uses both “IB” and “IBEF,” along
 - Prompt instructions are not the security boundary. Deterministic input/output validation, authorisation checks, state constraints and DB references are.
 - The model may propose tool calls; the application decides whether they are allowed.
 - Only expose the tools needed for the current task. No approval action for a pathway note is needed in this MVP.
-- Do not expose database, model, Keeper, Whissle or Africa's Talking credentials to the browser.
+- Do not expose database, model, Keeper, OpenAI transcription or Africa's Talking credentials to the browser.
 - Reject unexpected tool names/arguments and validate schema versions.
 - Treat observation text, transcripts, user content and external pages as data, not trusted instructions. A hostile string inside an observation must not be able to change the system prompt or tool permissions.
 
@@ -118,7 +120,7 @@ The source list in the team's materials uses both “IB” and “IBEF,” along
 | Teacher not authorised | Reject request; no record leakage |
 | DB write failure | Do not show “saved”; preserve draft where possible |
 | Uncertain transcript | Ask teacher to confirm critical content |
-| Whissle unavailable | No fake transcript; offer retry/alternate text entry |
+| Transcription provider unavailable | No fake transcript; preserve the recording and retry or request teacher review |
 | Educational retrieval timeout | Continue with learner evidence/model knowledge; clearly mark guidance unavailable; no fake citations |
 | Keeper authentication/tool error | Mark calendar context unavailable; do not make up events; do not bypass MCP silently |
 | SMS/Voice API failure | Report actual failure/pending status; don't claim delivery/call success |

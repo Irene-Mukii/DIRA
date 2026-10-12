@@ -15,6 +15,10 @@ import {
 } from "@/lib/services/follow-up-queue";
 import { buildEvidenceSummary } from "@/lib/services/evidence-summary";
 import {
+  DraftError,
+  saveCallObservationDrafts,
+} from "@/lib/services/call-observations";
+import {
   acceptSuggestion,
   regenerateSuggestion,
   suggestTest,
@@ -423,6 +427,39 @@ export function createDiraMcpServer(): McpServer {
           return toolError("suggestion_acceptance_rejected", error.message);
         }
         return toolError("suggestion_acceptance_failed", "Dira could not save the accepted test.");
+      }
+    },
+  );
+
+  server.registerTool(
+    "save_call_observation_drafts",
+    {
+      title: "Save observation drafts from a call transcript",
+      description:
+        "Save per-learner observation segments quoted from a processed call transcript as teacher-review drafts. Learner matching is done by the server; drafts are never real observations until the teacher confirms them.",
+      inputSchema: {
+        recording_id: z.string().uuid(),
+        segments: z
+          .array(
+            z.object({
+              segment_text: z.string().trim().min(1).max(4000),
+              mentioned_name: z.string().trim().max(100).optional(),
+              observation_type: z.enum(OBSERVATION_TYPES).optional(),
+            }),
+          )
+          .min(1)
+          .max(30),
+      },
+    },
+    async ({ recording_id, segments }) => {
+      try {
+        return toolResult(await saveCallObservationDrafts(recording_id, segments));
+      } catch (error) {
+        logToolFailure("save_call_observation_drafts", error);
+        if (error instanceof DraftError) {
+          return toolError("draft_save_rejected", error.message);
+        }
+        return toolError("draft_save_failed", "Dira could not save the observation drafts.");
       }
     },
   );

@@ -12,7 +12,7 @@ flowchart TD
     D --> E{Capture method}
     E -->|Type| F[Enter original observation]
     E -->|Voice| G[Record and review audio]
-    G --> H[Whissle transcription]
+    G --> H[OpenAI transcription (MVP only)]
     F --> I[Validate teacher, learner and content]
     H --> I
     I --> J[log_observation MCP tool]
@@ -61,7 +61,7 @@ If validation fails, retain the draft and explain what needs correction. If the 
 
 1. Teacher records audio in the same bottom composer used for text, using the existing `VoiceNoteRecorder` rather than creating a duplicate recorder.
 2. A recording preview lets the teacher review or discard it before submitting.
-3. The backend sends audio to Whissle using the configured format and records the transcription status.
+3. The backend sends the completed recording to OpenAI's transcription API for the MVP and records the transcription status. This is a temporary security exception; replace it with a reviewed self-hosted open-weight model before go-live.
 4. The transcript is checked for required context and material uncertainty. Unclear learner names, negation, key counts or facts require clarification before save.
 5. The validated content follows the same `log_observation` and PostgreSQL path as typed input.
 6. The UI confirms success only when the observation has been persisted.

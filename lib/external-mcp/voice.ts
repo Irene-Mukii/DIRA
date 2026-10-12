@@ -1,5 +1,7 @@
 import "server-only";
 
+import { getVoiceDemoDestination, isVoiceDemoMode } from "@/lib/services/voice-config";
+
 const REQUEST_TIMEOUT_MS = 15_000;
 const PRODUCTION_VOICE_ENDPOINT = "https://voice.africastalking.com/call";
 const SANDBOX_VOICE_ENDPOINT =
@@ -12,10 +14,14 @@ export interface AfricaTalkingCallOptions {
   destination: string;
   clientRequestId: string;
   sandbox: boolean;
+  /** "demo" sends only to the configured demo number; "real" to a DB-resolved teacher. */
+  mode: "demo" | "real";
 }
 
 export interface AfricaTalkingCallResult {
   httpStatus: number;
+  /** Provider sessionId used to link callbacks and recordings; null if not returned. */
+  sessionId: string | null;
 }
 
 export class AfricaTalkingCallError extends Error {
@@ -32,13 +38,15 @@ export class AfricaTalkingCallError extends Error {
 }
 
 /**
- * Submit a single call request to Africa's Talking; never include phone values
- * or provider response bodies in thrown errors or operational logs.
+ * Submit a single call request to Africa's Talking and return its sessionId.
+ * Never include phone values or provider response bodies in thrown errors or logs.
+ * Callback URLs are NOT sent here: Africa's Talking reads them from the dashboard
+ * (per phone number), so only the caller ID, destination and request id go out.
  */
 export async function initiateAfricaTalkingCall(
   options: AfricaTalkingCallOptions,
 ): Promise<AfricaTalkingCallResult> {
-  assertDemoDestination(options.destination);
+  assertCallAllowed(options.mode, options.destination);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   const body = new URLSearchParams({
@@ -69,7 +77,10 @@ export async function initiateAfricaTalkingCall(
 
     // The provider SDK documents only 200 and 201 as accepted call submissions.
     if (response.status === 200 || response.status === 201) {
-      return { httpStatus: response.status };
+      return {
+        httpStatus: response.status,
+        sessionId: await readSessionId(response),
+      };
     }
     if (response.status >= 400 && response.status < 500) {
       throw new AfricaTalkingCallError(
@@ -98,15 +109,56 @@ export async function initiateAfricaTalkingCall(
   }
 }
 
-/** Enforce the local test-number gate at the provider boundary itself. */
-function assertDemoDestination(destination: string): void {
-  const configuredDestination = process.env.DIRA_DEMO_CALL_TO?.trim();
-  if (
-    process.env.NODE_ENV === "production" ||
-    process.env.DIRA_DEMO_CALL_TEST_MODE !== "true" ||
-    !configuredDestination ||
-    destination !== configuredDestination
-  ) {
-    throw new Error("Africa's Talking call blocked by the demo destination gate");
+/**
+ * Extract entries[0].sessionId from the /call response body.
+ * Response shape is from secondary sources (official docs unavailable): VERIFY against
+ * a real response. A missing/odd body returns null rather than failing an accepted call.
+ */
+async function readSessionId(response: Response): Promise<string | null> {
+  try {
+    const parsed: unknown = await response.json();
+    const entries =
+      typeof parsed === "object" && parsed !== null
+        ? (parsed as { entries?: unknown }).entries
+        : null;
+    const first = Array.isArray(entries) ? entries[0] : null;
+    const sessionId =
+      typeof first === "object" && first !== null
+        ? (first as { sessionId?: unknown }).sessionId
+        : null;
+    return typeof sessionId === "string" && /^[A-Za-z0-9_.-]{1,100}$/.test(sessionId)
+      ? sessionId
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Enforce the destination gate at the provider boundary itself.
+ * - Tests never place chargeable calls: Vitest always blocks this client (mock it).
+ * - Demo mode: only the configured demo number, never in production builds
+ *   (DEMO BYPASS: skips teacher phone/consent lookup so the flow can be tested).
+ * - Real mode: demo mode must be off, so a real teacher number can never be dialled
+ *   while the demo switch is on, and the demo number is never a silent fallback.
+ */
+function assertCallAllowed(mode: "demo" | "real", destination: string): void {
+  if (process.env.VITEST) {
+    throw new Error("Africa's Talking calls are blocked under automated tests");
+  }
+  if (mode === "demo") {
+    const configuredDestination = getVoiceDemoDestination();
+    if (
+      process.env.NODE_ENV === "production" ||
+      !isVoiceDemoMode() ||
+      !configuredDestination ||
+      destination !== configuredDestination
+    ) {
+      throw new Error("Africa's Talking call blocked by the demo destination gate");
+    }
+    return;
+  }
+  if (isVoiceDemoMode() || destination === getVoiceDemoDestination()) {
+    throw new Error("Africa's Talking call blocked: real mode cannot use demo settings");
   }
 }
