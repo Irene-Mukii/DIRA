@@ -46,17 +46,48 @@ server.tool(
         tool_name: "log_observation",
         status: "started",
         tool_input: {
-          learner_id: input.learner_id,
           observation_type: input.observation_type,
-          submission_id: input.submission_id,
+          linked_test: Boolean(input.linked_test_id),
         },
       });
 
-      const { logObservation } = await import(
-        "../lib/mcp-tools/logObservation"
-      );
 
-      const result = await logObservation(input);
+const { logObservation } = await import(
+  "../lib/mcp-tools/logObservation"
+);
+const { pool } = await import("../lib/db/client");
+
+// Match the application's existing demo-mode restriction.
+if (
+  process.env.NODE_ENV === "production" &&
+  process.env.DIRA_DEMO_MODE !== "true"
+) {
+  throw new Error("MCP observation logging is not enabled in production demo mode");
+}
+
+const contextResult = await pool.query<{
+  teacher_id: string;
+  school_id: string;
+}>(
+  `SELECT teacher_id, school_id
+   FROM teachers
+   ORDER BY created_at ASC, teacher_id ASC, school_id ASC
+   LIMIT 1`,
+);
+
+const context = contextResult.rows[0];
+
+if (!context) {
+  throw new Error("No trusted teacher context is available");
+}
+
+const result = await logObservation(
+  {
+    ...input,
+    observed_at: input.observed_at ?? new Date().toISOString(),
+  },
+  context,
+);
 
       await logToolEvent({
         run_id: runId,
@@ -67,7 +98,7 @@ server.tool(
         tool_output: {
           success: true,
           duplicate: result.duplicate,
-          observation_id: result.observation.observation_id,
+          linked_test: Boolean(result.observation.linked_test_id),
         },
       });
 
