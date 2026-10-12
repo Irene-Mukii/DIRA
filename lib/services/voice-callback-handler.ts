@@ -7,13 +7,14 @@ import {
   isCallbackAuthorized,
   parseCallbackForm,
 } from "@/lib/services/voice-callbacks";
+import {
+  buildEmptyVoiceXml,
+  buildRecordingCallbackXml,
+  buildRecordingInstructionsXml,
+} from "@/lib/services/voice-xml";
 
-const TEACHER_GREETING =
-  "Hello teacher, please share remarks you have for one or more of your focus group of the week. Make sure to state the name of the child you are talking about before each of their observations. You may begin after the beep, and press the hash key when you are done.";
-const TEACHER_THANKS = "Thank you. Your remarks have been recorded. Goodbye.";
-
-function xmlResponse(body: string) {
-  return new NextResponse(`<?xml version="1.0" encoding="UTF-8"?><Response>${body}</Response>`, {
+function xmlResponse(xml: string) {
+  return new NextResponse(xml, {
     headers: {
       "Content-Type": "application/xml; charset=utf-8",
       "Cache-Control": "no-store",
@@ -21,51 +22,182 @@ function xmlResponse(body: string) {
   });
 }
 
-function escapeXml(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
+function callbackLog(
+  endpoint: string,
+  request: Request,
+  values: {
+    status: number;
+    branch: string;
+    isActive?: boolean | null;
+    direction?: string | null;
+    hasSessionId?: boolean;
+    hasRecordingUrl?: boolean;
+    recordingCallbackConfigured?: boolean;
+    callState?: string | null;
+    responseBytes?: number;
+    containsSay?: boolean;
+    containsRecord?: boolean;
+  },
+): void {
+  console.info("Africa's Talking voice callback", {
+    endpoint,
+    status: values.status,
+    responseContentType:
+      values.status >= 400
+        ? "application/json"
+        : endpoint === "events"
+          ? "application/json"
+          : "application/xml; charset=utf-8",
+    requestContentType: request.headers.get("content-type")?.split(";")[0] ?? null,
+    isActive: values.isActive ?? null,
+    direction: values.direction ?? null,
+    hasSessionId: values.hasSessionId ?? false,
+    hasRecordingUrl: values.hasRecordingUrl ?? false,
+    branch: values.branch,
+    recordingCallbackConfigured: values.recordingCallbackConfigured ?? false,
+    callState: values.callState ?? null,
+    responseBytes: values.responseBytes ?? null,
+    containsSay: values.containsSay ?? false,
+    containsRecord: values.containsRecord ?? false,
+  });
+}
+
+async function readCallbackFields(
+  request: NextRequest,
+  endpoint: string,
+): Promise<{ fields: NonNullable<ReturnType<typeof parseCallbackForm>> } | { response: NextResponse }> {
+  const contentType = request.headers.get("content-type")?.toLowerCase() ?? "";
+  if (
+    !contentType.startsWith("application/x-www-form-urlencoded") &&
+    !contentType.startsWith("multipart/form-data")
+  ) {
+    callbackLog(endpoint, request, { status: 415, branch: "unsupported_content_type" });
+    return {
+      response: NextResponse.json({ error: "Unsupported callback content type" }, { status: 415 }),
+    };
+  }
+
+  let form: FormData;
+  try {
+    form = await request.formData();
+  } catch {
+    callbackLog(endpoint, request, { status: 400, branch: "malformed_form" });
+    return { response: NextResponse.json({ error: "Invalid callback form" }, { status: 400 }) };
+  }
+  const fields = parseCallbackForm(form);
+  if (!fields) {
+    callbackLog(endpoint, request, { status: 400, branch: "missing_session_id" });
+    return { response: NextResponse.json({ error: "Invalid callback" }, { status: 400 }) };
+  }
+  return { fields };
+}
+
+function scheduleRecordingProcessing(recordingId: string): void {
+  after(async () => {
+    try {
+      await processPendingRecordings({ recordingId });
+    } catch (error) {
+      console.error("Background recording processing failed", {
+        errorName: error instanceof Error ? error.name : "UnknownError",
+      });
+    }
+  });
 }
 
 /**
  * Africa's Talking voice callback: called when the teacher answers, and again on
  * later call updates. It (1) authenticates via the secret in the URL (path segment
  * `pathSecret`, or legacy ?token=), (2) records the callback idempotently, and
- * (3) answers with the call instructions: greeting, then <Record> whose callbackUrl
- * receives the finished recording. The recording callback reuses the same secret
- * style as the incoming request. Only the first (active, no recording yet) request
- * gets the prompt; repeats and the final isActive=0 notification get an empty
- * response so the prompt is not replayed.
- * Instruction format (<Say>/<Record>) is from secondary docs: VERIFY on a real call.
+ * (3) answers with the documented partial-recording action: <Record> contains the
+ * spoken prompt and the recording callback URL. Recording callbacks return XML while
+ * the call remains active; the final inactive callback ends with an empty Response.
+ * Verify execution on a real call because Africa's Talking documentation is client-rendered.
  */
 export async function handleVoiceInstructions(
   request: NextRequest,
   pathSecret?: string,
 ): Promise<NextResponse> {
   if (!isCallbackAuthorized(request, pathSecret)) {
+    callbackLog("voice", request, { status: 401, branch: "unauthorized" });
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const fields = parseCallbackForm(await request.formData().catch(() => new FormData()));
-  if (!fields) {
-    return NextResponse.json({ error: "Invalid callback" }, { status: 400 });
+  const parsed = await readCallbackFields(request, "voice");
+  if ("response" in parsed) {
+    return parsed.response;
+  }
+  const fields = parsed.fields;
+  if (fields.isActive === null) {
+    callbackLog("voice", request, {
+      status: 400,
+      branch: "missing_active_state",
+      direction: fields.direction,
+      hasSessionId: true,
+      hasRecordingUrl: Boolean(fields.recordingUrl),
+    });
+    return NextResponse.json({ error: "Missing call active state" }, { status: 400 });
   }
 
   try {
     const result = await ingestCallback(fields, "voice");
     if (!result) {
       // Inbound/unknown traffic: hang up without recording anything.
-      return xmlResponse("");
+      const xml = buildEmptyVoiceXml();
+      const response = xmlResponse(xml);
+      callbackLog("voice", request, {
+        status: response.status,
+        branch: "ignored_inbound",
+        isActive: fields.isActive,
+        direction: fields.direction,
+        hasSessionId: true,
+        hasRecordingUrl: Boolean(fields.recordingUrl),
+        responseBytes: Buffer.byteLength(xml),
+      });
+      return response;
     }
-    if (fields.isActive === false || fields.recordingUrl) {
-      return xmlResponse("");
+    if (result.newRecording && result.recordingId) {
+      scheduleRecordingProcessing(result.recordingId);
+    }
+    if (fields.isActive === false) {
+      const xml = buildEmptyVoiceXml();
+      const response = xmlResponse(xml);
+      callbackLog("voice", request, {
+        status: response.status,
+        branch: "inactive_final_callback",
+        isActive: fields.isActive,
+        direction: fields.direction,
+        hasSessionId: true,
+        hasRecordingUrl: Boolean(fields.recordingUrl),
+        responseBytes: Buffer.byteLength(xml),
+      });
+      return response;
+    }
+    if (fields.recordingUrl) {
+      const xml = buildRecordingCallbackXml();
+      const response = xmlResponse(xml);
+      callbackLog("voice", request, {
+        status: response.status,
+        branch: "recording_received",
+        isActive: fields.isActive,
+        direction: fields.direction,
+        hasSessionId: true,
+        hasRecordingUrl: true,
+        responseBytes: Buffer.byteLength(xml),
+        containsSay: xml.includes("<Say>"),
+      });
+      return response;
     }
 
     const baseUrl = resolvePublicBaseUrl(request);
     if (!baseUrl) {
-      return xmlResponse("");
+      callbackLog("voice", request, {
+        status: 503,
+        branch: "public_base_url_missing",
+        isActive: fields.isActive,
+        direction: fields.direction,
+        hasSessionId: true,
+      });
+      return NextResponse.json({ error: "Public callback base URL is not configured" }, { status: 503 });
     }
     const recordingCallback =
       pathSecret !== undefined
@@ -73,16 +205,26 @@ export async function handleVoiceInstructions(
         : `${baseUrl}/api/voice/recording?token=${encodeURIComponent(
             new URL(request.url).searchParams.get("token") ?? "",
           )}`;
-    return xmlResponse(
-      `<Say>${escapeXml(TEACHER_GREETING)}</Say>` +
-        `<Record finishOnKey="#" maxLength="180" timeout="10" trimSilence="true" playBeep="true" callbackUrl="${escapeXml(recordingCallback)}">` +
-        `</Record>` +
-        `<Say>${escapeXml(TEACHER_THANKS)}</Say>`,
-    );
+    const xml = buildRecordingInstructionsXml(recordingCallback);
+    const response = xmlResponse(xml);
+    callbackLog("voice", request, {
+      status: response.status,
+      branch: "recording_instructions",
+      isActive: fields.isActive,
+      direction: fields.direction,
+      hasSessionId: true,
+      recordingCallbackConfigured: true,
+      callState: fields.callSessionState,
+      responseBytes: Buffer.byteLength(xml),
+      containsSay: xml.includes("<Say>"),
+      containsRecord: xml.includes("<Record "),
+    });
+    return response;
   } catch (error) {
     console.error("Voice callback failed", {
       errorName: error instanceof Error ? error.name : "UnknownError",
     });
+    callbackLog("voice", request, { status: 500, branch: "processing_error" });
     return NextResponse.json({ error: "Callback processing failed" }, { status: 500 });
   }
 }
@@ -100,33 +242,78 @@ export async function handleProviderCallback(
   pathSecret?: string,
 ): Promise<NextResponse> {
   if (!isCallbackAuthorized(request, pathSecret)) {
+    callbackLog(source, request, { status: 401, branch: "unauthorized" });
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  const fields = parseCallbackForm(await request.formData().catch(() => new FormData()));
-  if (!fields) {
-    return NextResponse.json({ error: "Invalid callback" }, { status: 400 });
+  const parsed = await readCallbackFields(request, source);
+  if ("response" in parsed) {
+    return parsed.response;
+  }
+  const fields = parsed.fields;
+  if (fields.isActive === null) {
+    callbackLog(source, request, {
+      status: 400,
+      branch: "missing_active_state",
+      direction: fields.direction,
+      hasSessionId: true,
+      hasRecordingUrl: Boolean(fields.recordingUrl),
+    });
+    return NextResponse.json({ error: "Missing call active state" }, { status: 400 });
   }
 
   try {
     const result = await ingestCallback(fields, source);
     if (result?.newRecording && result.recordingId) {
-      const recordingId = result.recordingId;
-      after(async () => {
-        try {
-          await processPendingRecordings({ recordingId });
-        } catch (error) {
-          console.error("Background recording processing failed", {
-            errorName: error instanceof Error ? error.name : "UnknownError",
-          });
-        }
-      });
+      scheduleRecordingProcessing(result.recordingId);
     }
-    return NextResponse.json({ ok: true });
+    if (!result) {
+      const xml = source === "recording" ? buildEmptyVoiceXml() : null;
+      const response = xml
+        ? xmlResponse(xml)
+        : NextResponse.json({ ok: true });
+      callbackLog(source, request, {
+        status: response.status,
+        branch: "ignored_inbound",
+        isActive: fields.isActive,
+        direction: fields.direction,
+        hasSessionId: true,
+        hasRecordingUrl: Boolean(fields.recordingUrl),
+        responseBytes: xml ? Buffer.byteLength(xml) : undefined,
+      });
+      return response;
+    }
+
+    const xml =
+      source === "recording"
+        ? fields.isActive
+          ? buildRecordingCallbackXml()
+          : buildEmptyVoiceXml()
+        : null;
+    const response = xml
+      ? xmlResponse(xml)
+      : NextResponse.json({ ok: true });
+    callbackLog(source, request, {
+      status: response.status,
+      branch:
+        source === "recording"
+          ? fields.isActive
+            ? "recording_callback_continues"
+            : "recording_callback_inactive"
+          : "event_recorded",
+      isActive: fields.isActive,
+      direction: fields.direction,
+      hasSessionId: true,
+      hasRecordingUrl: Boolean(fields.recordingUrl),
+      responseBytes: xml ? Buffer.byteLength(xml) : undefined,
+      containsSay: Boolean(xml?.includes("<Say>")),
+    });
+    return response;
   } catch (error) {
     console.error("Provider callback failed", {
       source,
       errorName: error instanceof Error ? error.name : "UnknownError",
     });
+    callbackLog(source, request, { status: 500, branch: "processing_error" });
     // A 5xx lets the provider redeliver; ingestion is idempotent.
     return NextResponse.json({ error: "Callback processing failed" }, { status: 500 });
   }

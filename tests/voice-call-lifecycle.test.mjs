@@ -12,6 +12,11 @@ const { initiateAfricaTalkingCall } = await import(
   "../lib/external-mcp/voice.ts"
 );
 const { transcribeRecording } = await import("../lib/external-mcp/stt.ts");
+const {
+  buildEmptyVoiceXml,
+  buildRecordingCallbackXml,
+  buildRecordingInstructionsXml,
+} = await import("../lib/services/voice-xml.ts");
 
 const sessions = [];
 function newSession() {
@@ -64,6 +69,174 @@ describe("callback auth and parsing", () => {
     expect(isCallbackAuthorized(request, "nope!!")).toBe(false);
     if (previous === undefined) delete process.env.VOICE_CALLBACK_SECRET;
     else process.env.VOICE_CALLBACK_SECRET = previous;
+  });
+
+  describe("Africa's Talking voice XML", () => {
+    it("nests the recording prompt inside the documented partial Record action", () => {
+      const xml = buildRecordingInstructionsXml(
+        "https://example.ngrok-free.dev/api/voice/cb/secret/recording",
+      );
+      expect(xml).toMatch(
+        /^<\?xml version="1\.0" encoding="UTF-8"\?><Response><Record\b/,
+      );
+      expect(xml).toContain('finishOnKey="#"');
+      expect(xml).toContain('maxLength="180"');
+      expect(xml).toContain('trimSilence="true"');
+      expect(xml).toContain('playBeep="true"');
+      expect(xml).toContain(
+        'callbackUrl="https://example.ngrok-free.dev/api/voice/cb/secret/recording"',
+      );
+      expect(xml).toMatch(/<Record\b[^>]*><Say>[\s\S]+<\/Say><\/Record><\/Response>$/);
+      expect(xml.slice(xml.indexOf("</Record>"))).not.toContain("<Say>");
+    });
+
+    it("escapes dynamic callback URL characters and returns XML for the recording callback", () => {
+      expect(buildRecordingInstructionsXml("https://example.test/a?x=1&y=2")).toContain(
+        "callbackUrl=\"https://example.test/a?x=1&amp;y=2\"",
+      );
+      expect(buildRecordingCallbackXml()).toMatch(
+        /^<\?xml version="1\.0" encoding="UTF-8"\?><Response><Say>.+<\/Say><\/Response>$/,
+      );
+      expect(buildEmptyVoiceXml()).toBe(
+        '<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
+      );
+    });
+
+    it("returns the recording action to an active authenticated outbound callback", async () => {
+      const sessionId = newSession();
+      const oldSecret = process.env.VOICE_CALLBACK_SECRET;
+      const oldBaseUrl = process.env.DIRA_PUBLIC_BASE_URL;
+      process.env.VOICE_CALLBACK_SECRET = "test-secret";
+      process.env.DIRA_PUBLIC_BASE_URL = "https://voice-test.ngrok-free.dev";
+      try {
+        const { handleVoiceInstructions } = await import(
+          "../lib/services/voice-callback-handler.ts"
+        );
+        const request = new Request(
+          "https://voice-test.ngrok-free.dev/api/voice/cb/test-secret/teacher-follow-up",
+          {
+            method: "POST",
+            headers: { "content-type": "application/x-www-form-urlencoded" },
+            body: new URLSearchParams({
+              sessionId,
+              direction: "outbound",
+              isActive: "1",
+            }),
+          },
+        );
+        const response = await handleVoiceInstructions(request, "test-secret");
+        const body = await response.text();
+        expect(response.status).toBe(200);
+        expect(response.headers.get("content-type")).toContain("application/xml");
+        expect(body).toContain("<Record");
+        expect(body).toContain("<Say>");
+        expect(body).toContain(
+          "https://voice-test.ngrok-free.dev/api/voice/cb/test-secret/recording",
+        );
+        expect(body).toMatch(/<Record\b[^>]*><Say>[\s\S]+<\/Say><\/Record>/);
+      } finally {
+        if (oldSecret === undefined) delete process.env.VOICE_CALLBACK_SECRET;
+        else process.env.VOICE_CALLBACK_SECRET = oldSecret;
+        if (oldBaseUrl === undefined) delete process.env.DIRA_PUBLIC_BASE_URL;
+        else process.env.DIRA_PUBLIC_BASE_URL = oldBaseUrl;
+      }
+    });
+
+    it("returns an empty XML response for an authenticated inactive final callback", async () => {
+      const sessionId = newSession();
+      const oldSecret = process.env.VOICE_CALLBACK_SECRET;
+      process.env.VOICE_CALLBACK_SECRET = "test-secret";
+      try {
+        const { handleProviderCallback } = await import(
+          "../lib/services/voice-callback-handler.ts"
+        );
+        const request = new Request(
+          "https://voice-test.ngrok-free.dev/api/voice/cb/test-secret/recording",
+          {
+            method: "POST",
+            headers: { "content-type": "application/x-www-form-urlencoded" },
+            body: new URLSearchParams({
+              sessionId,
+              direction: "outbound",
+              isActive: "0",
+              callSessionState: "Completed",
+            }),
+          },
+        );
+        const response = await handleProviderCallback(
+          request,
+          "recording",
+          "test-secret",
+        );
+        const body = await response.text();
+        expect(response.status).toBe(200);
+        expect(response.headers.get("content-type")).toContain("application/xml");
+        expect(body).toBe(buildEmptyVoiceXml());
+        expect(body).not.toContain("<Say>");
+        expect(body).not.toContain("<Record");
+      } finally {
+        if (oldSecret === undefined) delete process.env.VOICE_CALLBACK_SECRET;
+        else process.env.VOICE_CALLBACK_SECRET = oldSecret;
+      }
+    });
+
+    it("rejects unsupported content types before trying to parse the callback", async () => {
+      const oldSecret = process.env.VOICE_CALLBACK_SECRET;
+      process.env.VOICE_CALLBACK_SECRET = "test-secret";
+      try {
+        const { handleProviderCallback } = await import(
+          "../lib/services/voice-callback-handler.ts"
+        );
+        const request = new Request(
+          "https://voice-test.ngrok-free.dev/api/voice/cb/test-secret/recording",
+          {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ sessionId: "not-stored", isActive: true }),
+          },
+        );
+        const response = await handleProviderCallback(
+          request,
+          "recording",
+          "test-secret",
+        );
+        expect(response.status).toBe(415);
+        expect(response.headers.get("content-type")).toContain("application/json");
+
+        const missingState = await handleProviderCallback(
+          new Request(
+            "https://voice-test.ngrok-free.dev/api/voice/cb/test-secret/recording",
+            {
+              method: "POST",
+              headers: { "content-type": "application/x-www-form-urlencoded" },
+              body: new URLSearchParams({ sessionId: "not-stored" }),
+            },
+          ),
+          "recording",
+          "test-secret",
+        );
+        expect(missingState.status).toBe(400);
+
+        const malformed = await handleProviderCallback(
+          new Request(
+            "https://voice-test.ngrok-free.dev/api/voice/cb/test-secret/recording",
+            {
+              method: "POST",
+              headers: {
+                "content-type": "multipart/form-data; boundary=expected",
+              },
+              body: "not a multipart body",
+            },
+          ),
+          "recording",
+          "test-secret",
+        );
+        expect(malformed.status).toBe(400);
+      } finally {
+        if (oldSecret === undefined) delete process.env.VOICE_CALLBACK_SECRET;
+        else process.env.VOICE_CALLBACK_SECRET = oldSecret;
+      }
+    });
   });
   it("fails closed without a secret and accepts only the right token", () => {
     const previous = process.env.VOICE_CALLBACK_SECRET;

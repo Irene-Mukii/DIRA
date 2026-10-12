@@ -54,10 +54,19 @@ export interface FollowUpDispatchResult {
 export async function dispatchOneDueFollowUp(
   now: Date = new Date(),
   teacherContext?: LogObservationContext,
+  manualDemoJobId?: string,
 ): Promise<FollowUpDispatchResult | null> {
   const config = getVoiceConfiguration();
+  if (manualDemoJobId && (config.mode !== "demo" || !teacherContext)) {
+    throw new Error("Manual demo dispatch requires an authorized demo context");
+  }
   await markStuckInitiatingJobs(now);
-  const claimed = await claimDueFollowUp(now, config.mode === "real", teacherContext);
+  const claimed = await claimDueFollowUp(
+    now,
+    config.mode === "real",
+    teacherContext,
+    manualDemoJobId,
+  );
   if (!claimed) {
     return null;
   }
@@ -239,6 +248,7 @@ async function claimDueFollowUp(
   now: Date,
   requireTeacherContact: boolean,
   teacherContext?: LogObservationContext,
+  manualDemoJobId?: string,
 ): Promise<ClaimedCall | null> {
   const client = await pool.connect();
   try {
@@ -249,25 +259,10 @@ async function claimDueFollowUp(
          SELECT job.follow_up_job_id
          FROM teacher_follow_up_jobs AS job
          JOIN schools AS school ON school.school_id = job.school_id
-         JOIN school_calendar AS entry
+         LEFT JOIN school_calendar AS entry
            ON entry.calendar_entry_id = job.calendar_entry_id
-          AND entry.school_id = job.school_id
-          AND entry.class_id = job.class_id
-          AND entry.teacher_id = job.teacher_id
-          AND entry.calendar_date = job.scheduled_date
-          AND entry.event_status = 'scheduled'
-         JOIN timetable_assignments AS assignment
+         LEFT JOIN timetable_assignments AS assignment
            ON assignment.timetable_assignment_id = entry.timetable_assignment_id
-          AND assignment.school_id = entry.school_id
-          AND assignment.class_id = entry.class_id
-          AND assignment.teacher_id = entry.teacher_id
-          AND assignment.academic_year = entry.academic_year
-          AND assignment.weekday = entry.weekday
-          AND assignment.period_number = entry.period_number
-          AND assignment.start_time = entry.start_time
-          AND assignment.end_time = entry.end_time
-          AND assignment.valid_from <= entry.calendar_date
-          AND (assignment.valid_to IS NULL OR assignment.valid_to >= entry.calendar_date)
          WHERE job.status = 'queued'
            AND job.scheduled_end_at <= $1
            AND ($3::text IS NULL OR job.teacher_id = $3)
@@ -281,46 +276,74 @@ async function claimDueFollowUp(
                  AND contact.voice_consent_at IS NOT NULL
              )
            )
-           AND school.timezone IS NOT NULL
-           AND job.scheduled_date =
-             ($1 AT TIME ZONE school.timezone)::date
-           AND entry.weekday =
-             EXTRACT(ISODOW FROM entry.calendar_date)::smallint
-           AND EXISTS (
-             SELECT 1
-             FROM school_closure_coverage AS coverage
-             WHERE coverage.school_id = job.school_id
-               AND coverage.coverage_start <= job.scheduled_date
-               AND coverage.coverage_end >= job.scheduled_date
-           )
-           AND NOT EXISTS (
-             SELECT 1 FROM school_closures AS closure
-             WHERE closure.school_id = job.school_id
-               AND closure.closure_date = job.scheduled_date
-           )
-           AND NOT EXISTS (
-             SELECT 1
-             FROM school_calendar AS overlap
-             WHERE overlap.school_id = entry.school_id
-               AND overlap.teacher_id = entry.teacher_id
-               AND overlap.calendar_date = entry.calendar_date
-               AND overlap.calendar_entry_id <> entry.calendar_entry_id
-               AND overlap.event_status = 'scheduled'
-               AND overlap.start_time < entry.end_time
-               AND overlap.end_time > entry.start_time
-           )
-           AND NOT EXISTS (
-             SELECT 1
-             FROM school_calendar AS active_period
-             WHERE active_period.school_id = entry.school_id
-               AND active_period.teacher_id = entry.teacher_id
-               AND active_period.calendar_date = entry.calendar_date
-               AND active_period.calendar_entry_id <> entry.calendar_entry_id
-               AND active_period.event_status = 'scheduled'
-               AND (active_period.calendar_date + active_period.start_time)
-                     AT TIME ZONE school.timezone <= $1
-               AND (active_period.calendar_date + active_period.end_time)
-                     AT TIME ZONE school.timezone > $1
+           AND (
+             (
+               $6::uuid IS NOT NULL
+               AND job.follow_up_job_id = $6
+               AND job.is_manual_demo = TRUE
+               AND $5::boolean = FALSE
+             )
+             OR
+             (
+               $6::uuid IS NULL
+               AND job.is_manual_demo = FALSE
+               AND entry.school_id = job.school_id
+               AND entry.class_id = job.class_id
+               AND entry.teacher_id = job.teacher_id
+               AND entry.calendar_date = job.scheduled_date
+               AND entry.event_status = 'scheduled'
+               AND assignment.school_id = entry.school_id
+               AND assignment.class_id = entry.class_id
+               AND assignment.teacher_id = entry.teacher_id
+               AND assignment.academic_year = entry.academic_year
+               AND assignment.weekday = entry.weekday
+               AND assignment.period_number = entry.period_number
+               AND assignment.start_time = entry.start_time
+               AND assignment.end_time = entry.end_time
+               AND assignment.valid_from <= entry.calendar_date
+               AND (assignment.valid_to IS NULL OR assignment.valid_to >= entry.calendar_date)
+               AND school.timezone IS NOT NULL
+               AND job.scheduled_date =
+                 ($1 AT TIME ZONE school.timezone)::date
+               AND entry.weekday =
+                 EXTRACT(ISODOW FROM entry.calendar_date)::smallint
+               AND EXISTS (
+                 SELECT 1
+                 FROM school_closure_coverage AS coverage
+                 WHERE coverage.school_id = job.school_id
+                   AND coverage.coverage_start <= job.scheduled_date
+                   AND coverage.coverage_end >= job.scheduled_date
+               )
+               AND NOT EXISTS (
+                 SELECT 1 FROM school_closures AS closure
+                 WHERE closure.school_id = job.school_id
+                   AND closure.closure_date = job.scheduled_date
+               )
+               AND NOT EXISTS (
+                 SELECT 1
+                 FROM school_calendar AS overlap
+                 WHERE overlap.school_id = entry.school_id
+                   AND overlap.teacher_id = entry.teacher_id
+                   AND overlap.calendar_date = entry.calendar_date
+                   AND overlap.calendar_entry_id <> entry.calendar_entry_id
+                   AND overlap.event_status = 'scheduled'
+                   AND overlap.start_time < entry.end_time
+                   AND overlap.end_time > entry.start_time
+               )
+               AND NOT EXISTS (
+                 SELECT 1
+                 FROM school_calendar AS active_period
+                 WHERE active_period.school_id = entry.school_id
+                   AND active_period.teacher_id = entry.teacher_id
+                   AND active_period.calendar_date = entry.calendar_date
+                   AND active_period.calendar_entry_id <> entry.calendar_entry_id
+                   AND active_period.event_status = 'scheduled'
+                   AND (active_period.calendar_date + active_period.start_time)
+                         AT TIME ZONE school.timezone <= $1
+                   AND (active_period.calendar_date + active_period.end_time)
+                         AT TIME ZONE school.timezone > $1
+               )
+             )
            )
          ORDER BY job.scheduled_end_at, job.follow_up_job_id
          LIMIT 1
@@ -346,6 +369,7 @@ async function claimDueFollowUp(
         teacherContext?.teacher_id ?? null,
         teacherContext?.school_id ?? null,
         requireTeacherContact,
+        manualDemoJobId ?? null,
       ],
     );
 

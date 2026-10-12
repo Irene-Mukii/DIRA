@@ -1,13 +1,18 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { connection } from "next/server";
+import { revalidatePath } from "next/cache";
 import Badge from "@/components/ui/Badge";
 import Card from "@/components/ui/Card";
 import { pool } from "@/lib/db/client";
 import { resolveTeacherContext } from "@/lib/auth/teacher-context";
+import { dispatchOneDueFollowUp } from "@/lib/services/follow-up-dispatch";
+import { queueManualDemoFollowUp } from "@/lib/services/follow-up-queue";
+import { getVoiceDemoDestination, isE164, isVoiceDemoMode } from "@/lib/services/voice-config";
 
 interface FollowUpCallRow {
   follow_up_job_id: string;
-  calendar_entry_id: string;
+  calendar_entry_id: string | null;
   scheduled_date: string;
   scheduled_end_at: Date;
   status: "queued" | "initiating" | "provider_accepted" | "provider_rejected" | "outcome_unknown" | "cancelled";
@@ -16,6 +21,7 @@ interface FollowUpCallRow {
   provider_accepted_at: Date | null;
   provider_http_status: number | null;
   last_error_code: string | null;
+  is_manual_demo: boolean;
 }
 
 interface PendingObservationRow {
@@ -82,7 +88,53 @@ function safeErrorLabel(code: string | null): string | null {
   return code ? "A dispatch error was recorded; contact the administrator" : null;
 }
 
-export default async function FollowUpCallsPage() {
+/** Queue an immediate demo-only job; it does not call the phone. */
+async function queueDemoCallAction() {
+  "use server";
+  const context = await resolveTeacherContext();
+  if (!context) {
+    redirect("/follow-up-calls?demoCall=unavailable");
+  }
+  let result: Awaited<ReturnType<typeof queueManualDemoFollowUp>>;
+  try {
+    result = await queueManualDemoFollowUp(context);
+  } catch (error) {
+    console.error("Could not queue manual demo call", {
+      errorName: error instanceof Error ? error.name : "UnknownError",
+    });
+    redirect("/follow-up-calls?demoCall=unavailable");
+  }
+  revalidatePath("/follow-up-calls");
+  redirect(`/follow-up-calls?demoCall=${result.already_queued ? "already_queued" : "queued"}`);
+}
+
+/** Dispatch only the explicitly selected manual demo job; this places a real call. */
+async function dispatchDemoCallAction(formData: FormData) {
+  "use server";
+  const context = await resolveTeacherContext();
+  const jobId = formData.get("jobId");
+  if (!context || typeof jobId !== "string" || !/^[0-9a-f-]{36}$/i.test(jobId)) {
+    redirect("/follow-up-calls?demoCall=unavailable");
+  }
+  let result: Awaited<ReturnType<typeof dispatchOneDueFollowUp>>;
+  try {
+    result = await dispatchOneDueFollowUp(new Date(), context, jobId);
+  } catch (error) {
+    console.error("Could not dispatch manual demo call", {
+      errorName: error instanceof Error ? error.name : "UnknownError",
+    });
+    redirect("/follow-up-calls?demoCall=unavailable");
+  }
+  revalidatePath("/follow-up-calls");
+  redirect(`/follow-up-calls?demoCall=${result?.status ?? "not_queued"}`);
+}
+
+export default async function FollowUpCallsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ demoCall?: string }>;
+}) {
+  const { demoCall } = await searchParams;
   await connection();
 
   if (
@@ -130,7 +182,8 @@ export default async function FollowUpCallsPage() {
            job.attempt_started_at,
            job.provider_accepted_at,
            job.provider_http_status,
-           job.last_error_code
+           job.last_error_code,
+           job.is_manual_demo
          FROM teacher_follow_up_jobs AS job
          WHERE job.teacher_id = $1 AND job.school_id = $2
          ORDER BY job.scheduled_end_at DESC
@@ -199,6 +252,40 @@ export default async function FollowUpCallsPage() {
           </Link>
         </header>
 
+        {demoCall && (
+          <Card className="border border-blue-300 p-4 text-sm text-blue-900 dark:border-blue-800 dark:text-blue-200" role="status">
+            {demoCall === "queued" && "A manual demo call is queued. It has not called your phone yet."}
+            {demoCall === "already_queued" && "An active manual demo call already exists; no duplicate was added."}
+            {demoCall === "provider_accepted" && "Africa's Talking accepted the demo call request."}
+            {demoCall === "provider_rejected" && "Africa's Talking rejected the demo call request."}
+            {demoCall === "outcome_unknown" && "The call result is uncertain. Check with Africa's Talking before retrying."}
+            {demoCall === "not_queued" && "That manual demo call is no longer queued, so no call was placed."}
+            {(demoCall === "unavailable" || !["queued", "already_queued", "provider_accepted", "provider_rejected", "outcome_unknown", "not_queued"].includes(demoCall)) &&
+              "The demo action is unavailable. Check development mode, demo recipient, database migration, and teacher/class setup."}
+          </Card>
+        )}
+
+        {process.env.NODE_ENV !== "production" &&
+          isVoiceDemoMode() &&
+          isE164(getVoiceDemoDestination() ?? "") && (
+            <Card className="space-y-3 border border-amber-400 p-5 dark:border-amber-700">
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                Test a demo call now
+              </h2>
+              <p className="text-sm text-gray-700 dark:text-gray-300">
+                Queueing creates one immediate demo job and does not call your phone. A separate dispatch action below places a real, potentially chargeable call to the configured demo number.
+              </p>
+              <form action={queueDemoCallAction}>
+                <button
+                  type="submit"
+                  className="rounded-md bg-blue-700 px-4 py-2 text-sm font-medium text-white hover:bg-blue-800"
+                >
+                  Queue demo call now
+                </button>
+              </form>
+            </Card>
+          )}
+
         <Card className="p-5">
           <h2 className="mb-1 text-lg font-semibold text-gray-900 dark:text-gray-100">
             Call requests
@@ -213,7 +300,14 @@ export default async function FollowUpCallsPage() {
           ) : (
             <div className="space-y-4">
               {callsResult.rows.map((call) => {
-                const details = statusDetails[call.status];
+                const details =
+                  call.is_manual_demo && call.status === "queued"
+                    ? {
+                        ...statusDetails.queued,
+                        explanation: "This immediate demo test is queued. It bypasses the calendar schedule but not the demo-number safety gate.",
+                        nextAction: "Dispatch it only when you are ready to place a real call to the configured demo phone.",
+                      }
+                    : statusDetails[call.status];
                 return (
                   <article
                     key={call.follow_up_job_id}
@@ -222,11 +316,15 @@ export default async function FollowUpCallsPage() {
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div>
                         <p className="font-medium text-gray-900 dark:text-gray-100">
-                          Class follow-up · {formatTime(call.scheduled_end_at, timezone)}
+                          {call.is_manual_demo ? "Manual demo call" : "Class follow-up"} · {formatTime(call.scheduled_end_at, timezone)}
                         </p>
-                        <p className="text-xs text-gray-500 dark:text-gray-400">
-                          Calendar entry {call.calendar_entry_id}
-                        </p>
+                        {call.is_manual_demo ? (
+                          <p className="text-xs text-amber-700 dark:text-amber-300">Demo call · no calendar event · queued for immediate testing</p>
+                        ) : (
+                          <p className="text-xs text-gray-500 dark:text-gray-400">
+                            Calendar entry {call.calendar_entry_id}
+                          </p>
+                        )}
                       </div>
                       <Badge variant={details.variant}>{details.label}</Badge>
                     </div>
@@ -236,6 +334,17 @@ export default async function FollowUpCallsPage() {
                     <p className="text-sm text-gray-600 dark:text-gray-400">
                       <span className="font-medium">Next:</span> {details.nextAction}
                     </p>
+                    {call.is_manual_demo && call.status === "queued" && (
+                      <form action={dispatchDemoCallAction}>
+                        <input type="hidden" name="jobId" value={call.follow_up_job_id} />
+                        <button
+                          type="submit"
+                          className="rounded-md bg-amber-700 px-4 py-2 text-sm font-medium text-white hover:bg-amber-800"
+                        >
+                          Dispatch demo call (places a real call)
+                        </button>
+                      </form>
+                    )}
                     <dl className="grid gap-2 text-xs text-gray-500 sm:grid-cols-2 dark:text-gray-400">
                       <div>
                         <dt className="inline font-medium">Attempts: </dt>

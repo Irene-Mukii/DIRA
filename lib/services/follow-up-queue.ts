@@ -1,8 +1,14 @@
 import "server-only";
 
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
 import { pool } from "@/lib/db/client";
+import type { LogObservationContext } from "@/lib/db/schema";
+import {
+  getVoiceDemoDestination,
+  isE164,
+  isVoiceDemoMode,
+} from "@/lib/services/voice-config";
 
 interface SchoolRow {
   school_id: string;
@@ -142,6 +148,110 @@ export interface DueFollowUp {
   scheduled_date: string;
   scheduled_end_at: Date;
   status: string;
+}
+
+export interface ManualDemoFollowUp {
+  follow_up_job_id: string;
+  scheduled_end_at: Date;
+  already_queued: boolean;
+}
+
+/**
+ * Queue one immediate test job for this development teacher without a calendar
+ * event. It creates no call; an explicit UI dispatch action is required to dial.
+ * Repeated clicks return the same active job rather than making a queue of calls.
+ */
+export async function queueManualDemoFollowUp(
+  context: LogObservationContext,
+  now: Date = new Date(),
+): Promise<ManualDemoFollowUp> {
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("Manual demo calls are disabled in production");
+  }
+  if (!isVoiceDemoMode() || !isE164(getVoiceDemoDestination() ?? "")) {
+    throw new Error("Enable demo mode and configure a valid demo destination first");
+  }
+
+  const schoolResult = await pool.query<{
+    timezone: string | null;
+    class_id: string | null;
+  }>(
+    `SELECT school.timezone, class.class_id
+     FROM schools AS school
+     JOIN teachers AS teacher
+       ON teacher.school_id = school.school_id
+      AND teacher.teacher_id = $2
+     LEFT JOIN LATERAL (
+       SELECT class_id
+       FROM classes
+       WHERE school_id = school.school_id
+       ORDER BY class_id
+       LIMIT 1
+     ) AS class ON TRUE
+     WHERE school.school_id = $1`,
+    [context.school_id, context.teacher_id],
+  );
+  const school = schoolResult.rows[0];
+  if (!school?.class_id) {
+    throw new Error("A class in this teacher's school is required to queue a demo call");
+  }
+  if (!school.timezone) {
+    throw new Error("Configure the school's timezone before queueing a demo call");
+  }
+
+  const existing = await pool.query<ManualDemoFollowUp>(
+    `SELECT follow_up_job_id, scheduled_end_at, TRUE AS already_queued
+     FROM teacher_follow_up_jobs
+     WHERE school_id = $1 AND teacher_id = $2 AND is_manual_demo = TRUE
+       AND status IN ('queued', 'initiating', 'outcome_unknown')
+     ORDER BY created_at DESC
+     LIMIT 1`,
+    [context.school_id, context.teacher_id],
+  );
+  if (existing.rows[0]) {
+    return existing.rows[0];
+  }
+
+  const inserted = await pool.query<ManualDemoFollowUp>(
+    `INSERT INTO teacher_follow_up_jobs (
+       calendar_entry_id, school_id, class_id, teacher_id,
+       scheduled_date, scheduled_end_at, idempotency_key, is_manual_demo
+     )
+     VALUES (
+       NULL, $1, $2, $3,
+       ($4::timestamptz AT TIME ZONE $5)::date, $4, $6, TRUE
+     )
+     ON CONFLICT (school_id, teacher_id)
+       WHERE is_manual_demo = TRUE
+         AND status IN ('queued', 'initiating', 'outcome_unknown')
+     DO NOTHING
+     RETURNING follow_up_job_id, scheduled_end_at, FALSE AS already_queued`,
+    [
+      context.school_id,
+      school.class_id,
+      context.teacher_id,
+      now,
+      school.timezone,
+      `manual-demo:${context.school_id}:${context.teacher_id}:${randomUUID()}`,
+    ],
+  );
+  if (inserted.rows[0]) {
+    return inserted.rows[0];
+  }
+
+  const raced = await pool.query<ManualDemoFollowUp>(
+    `SELECT follow_up_job_id, scheduled_end_at, TRUE AS already_queued
+     FROM teacher_follow_up_jobs
+     WHERE school_id = $1 AND teacher_id = $2 AND is_manual_demo = TRUE
+       AND status IN ('queued', 'initiating', 'outcome_unknown')
+     ORDER BY created_at DESC
+     LIMIT 1`,
+    [context.school_id, context.teacher_id],
+  );
+  if (!raced.rows[0]) {
+    throw new Error("Demo call queue could not be created");
+  }
+  return raced.rows[0];
 }
 
 export async function listDueFollowUps(

@@ -99,22 +99,19 @@ documents a `call` operation; use a genuine MCP server only if one is independen
 verified and deliberately selected.
 
 The server-side adapter uses the provider's official Node SDK request contract:
-`POST https://voice.africastalking.com/call` (or the sandbox host), URL-encoded
+`POST https://voice.africastalking.com/call`, URL-encoded
 `username`, `from`, `to`, and `clientRequestId`, with the `apikey` header. This
 request format is based on the official
 [Africa's Talking Node.js SDK](https://github.com/AfricasTalkingLtd/africastalking-node.js).
-The current Dira code only records an accepted HTTP submission, not ringing,
-answering, completion, or a recording. Provider response formats and callbacks still
-need to be confirmed using the project's actual account before extending lifecycle
-claims.
+Provider acceptance is not proof of ringing, answering, completion, or successful
+recording. Verify those states through callbacks from the project's actual account.
 
 For safety, the current dispatcher refuses production execution and requires explicit
 local demo mode plus server-side credentials and a single configured demo destination.
-It accepts no destination from a browser or teacher record. A protected scheduler
-endpoint submits at most one due call per invocation; do not schedule it until the
-Phase 3 migration and a controlled, manually observed test are complete. The voice
-callback route returns only the fixed teacher greeting. It does not record audio,
-transcribe, or save observations.
+It accepts no destination from a browser or teacher record. The 07:00 queue job
+prepares eligible work; it does not dispatch calls. The protected dispatcher submits
+at most one due call per invocation. The development-only manual demo queue action
+is separate from dispatch; dispatch places a real, potentially chargeable call.
 
 The `/follow-up-calls` page shows the configured development teacher's own queued and
 provider-submission records plus observations awaiting teacher review. It deliberately
@@ -139,6 +136,14 @@ Queue item → `teacher_calls` (provider `sessionId`) → `call_recordings` → 
 transcript → agent calls MCP tool `save_call_observation_drafts` →
 `observation_drafts` → teacher confirms at `/call-drafts` (calls `log_observation`).
 
+- The voice-instructions XML puts `<Say>` inside `<Record>`, with the protected
+  recording callback URL on `<Record callbackUrl>`. The recording callback replies
+  with XML while the call is active and an empty `<Response>` when inactive. This
+  follows the supplied partial-recording contract; a real call still needs to verify
+  that the account invokes both callbacks and returns the expected form fields.
+- Callback diagnostics report status, content type, XML size, action presence, and
+  non-sensitive callback metadata only. Do not share callback URLs containing the
+  path secret, recordings, or transcripts when reporting a failure.
 - Routes (set the secret as a path segment; the dashboard rejects `?token=`):
   `POST /api/voice/cb/<VOICE_CALLBACK_SECRET>/teacher-follow-up` (call instructions: greeting + `<Record>`),
   `.../recording` (set automatically in the `<Record callbackUrl>`), `.../events` (optional;
@@ -147,6 +152,11 @@ transcript → agent calls MCP tool `save_call_observation_drafts` →
   `AFRICASTALKING_VOICE_FROM`, always production endpoint. `DIRA_PUBLIC_BASE_URL` is the public origin.
 - Workers: `npm run follow-up:queue` (07:00 prepare only), `follow-up:dispatch`
   (manual), `follow-up:recordings` (retry transcription/processing).
+- Development UI: `/follow-up-calls` offers **Queue demo call now** only when demo mode
+  and its explicit destination are configured. Queueing is idempotent and never calls
+  by itself; the separate dispatch button submits a real, potentially chargeable call
+  to that demo destination. It is disabled in production and does not create a calendar
+  entry or relax the normal scheduled-call eligibility checks.
 - Demo mode (`DIRA_DEMO_CALL_TEST_MODE`/`DIRA_VOICE_DEMO_MODE`) dials only the demo number and is
   flagged `is_demo`; real mode needs `teachers.phone_e164` and `voice_consent_at`.
 - Unverified: OpenAI account/key availability, recording download auth, `/call` response shape, and live callback behavior.
