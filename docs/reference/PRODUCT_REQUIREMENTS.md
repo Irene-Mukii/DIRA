@@ -98,11 +98,11 @@
 - Supported calendars are limited to what Keeper currently documents and the team actually configures; do not claim native Calendly support.
 - Calendar events are not evidence that a lesson happened or a learner attended.
 
-**PR-14. Speech-to-text.** The Whissle integration shall submit captured audio using its documented supported format and handle provider errors and timeouts without creating a fake transcript.
+**PR-14. Speech-to-text.** The MVP uses OpenAI's Audio Transcriptions API for captured audio, using a supported format and handling provider errors and timeouts without creating a fake transcript. Before go-live, replace this hosted integration with a security-reviewed, self-hosted open-weight transcription model.
 
 **PR-15. SMS.** Africa's Talking SMS may send a weekly focus reminder. Dira shall display or log the actual delivery status returned by the provider.
 
-**PR-16. Outbound phone capture.** Where account capability and time permit, Africa's Talking Voice shall initiate the teacher follow-up call and connect its captured audio to the same Whissle → validate → `log_observation` flow. Caller ID alone is not sufficient teacher authentication.
+**PR-16. Outbound phone capture.** Where account capability and time permit, Africa's Talking Voice shall initiate the teacher follow-up call and connect its captured audio to the same transcription → validate → `log_observation` flow. Caller ID alone is not sufficient teacher authentication.
 
 ## 4. Non-functional requirements
 

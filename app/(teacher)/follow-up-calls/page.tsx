@@ -45,7 +45,7 @@ const statusDetails: Record<
   provider_accepted: {
     label: "Provider accepted request",
     explanation: "Africa's Talking accepted the request to initiate a call.",
-    nextAction: "This does not confirm that the phone rang, was answered, or completed. Call outcome callbacks are not connected yet.",
+    nextAction: "This does not confirm that the phone rang or was answered. If it was answered and recorded, review the resulting drafts under Phone-call observation drafts.",
     variant: "default",
   },
   provider_rejected: {
@@ -194,6 +194,9 @@ export default async function FollowUpCallsPage() {
           <p className="mt-2 text-xs text-amber-800 dark:text-amber-300">
             Single-teacher demo view: this first-recorded teacher context is not a sign-in session.
           </p>
+          <Link href="/call-drafts" className="mt-2 inline-block text-sm text-blue-600 underline">
+            Review phone-call observation drafts
+          </Link>
         </header>
 
         <Card className="p-5">

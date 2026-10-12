@@ -14,6 +14,7 @@ services:
       - ./db/003_voice_call_lifecycle.sql:/docker-entrypoint-initdb.d/003-voice-call-lifecycle.sql:ro
       - ./db/004_observation_teacher_review.sql:/docker-entrypoint-initdb.d/004-observation-teacher-review.sql:ro
       - ./db/005_evidence_summary_activity_tests.sql:/docker-entrypoint-initdb.d/005-evidence-summary-activity-tests.sql:ro
+      - ./db/006_voice_call_recordings.sql:/docker-entrypoint-initdb.d/006-voice-call-recordings.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U dira_dev -d dira_dev"]
       interval: 5s

@@ -117,6 +117,18 @@ async function insertFixture() {
 }
 
 async function cleanupFixture() {
+  // Call records reference the job, so remove them first (children before parents).
+  await pool.query(
+    `DELETE FROM call_events WHERE call_id IN (
+       SELECT call_id FROM teacher_calls WHERE follow_up_job_id IN (
+         SELECT follow_up_job_id FROM teacher_follow_up_jobs WHERE calendar_entry_id = $1))`,
+    [fixture.calendarEntryId],
+  );
+  await pool.query(
+    `DELETE FROM teacher_calls WHERE follow_up_job_id IN (
+       SELECT follow_up_job_id FROM teacher_follow_up_jobs WHERE calendar_entry_id = $1)`,
+    [fixture.calendarEntryId],
+  );
   await pool.query(
     "DELETE FROM teacher_follow_up_jobs WHERE calendar_entry_id = $1",
     [fixture.calendarEntryId],
