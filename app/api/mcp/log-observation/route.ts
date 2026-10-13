@@ -143,13 +143,58 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    const learnerScope = await pool.query<{
+      class_id: string;
+      academic_year: number;
+    }>(
+      `SELECT e.class_id, e.academic_year
+       FROM learners l
+       JOIN learner_enrollments e ON e.learner_id = l.learner_id
+       JOIN classes c
+         ON c.class_id = e.class_id
+        AND c.school_id = e.school_id
+        AND c.academic_year = e.academic_year
+       WHERE l.learner_id = $1
+         AND e.school_id = $2
+         AND e.enrolment_status <> 'Withdrawn'
+         AND e.enrolled_from <= CURRENT_DATE
+         AND (e.enrolled_to IS NULL OR e.enrolled_to >= CURRENT_DATE)
+         AND EXISTS (
+           SELECT 1
+           FROM timetable_assignments ta
+           WHERE ta.class_id = e.class_id
+             AND ta.school_id = e.school_id
+             AND ta.academic_year = e.academic_year
+             AND ta.teacher_id = $3
+             AND ta.valid_from <= CURRENT_DATE
+             AND (ta.valid_to IS NULL OR ta.valid_to >= CURRENT_DATE)
+         )
+       ORDER BY e.academic_year DESC
+       LIMIT 1`,
+      [learnerId, context.school_id, context.teacher_id],
+    );
+    if (!learnerScope.rows[0]) {
+      return NextResponse.json(
+        { error: "Learner is not currently assigned to this teacher" },
+        { status: 404 },
+      );
+    }
+
     const result = await pool.query<ObservationChatRow>(
       `SELECT observation_id, original_observation, reviewed_observation,
               teacher_review_status, created_at
        FROM observations
-       WHERE learner_id = $1 AND school_id = $2 AND teacher_id = $3
+       WHERE learner_id = $1
+         AND school_id = $2
+         AND class_id = $3
+         AND academic_year = $4
       ORDER BY observed_at ASC, created_at ASC`,
-      [learnerId, context.school_id, context.teacher_id],
+      [
+        learnerId,
+        context.school_id,
+        learnerScope.rows[0].class_id,
+        learnerScope.rows[0].academic_year,
+      ],
     );
 
     return NextResponse.json({

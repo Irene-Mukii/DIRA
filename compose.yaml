@@ -16,6 +16,7 @@ services:
       - ./db/005_evidence_summary_activity_tests.sql:/docker-entrypoint-initdb.d/005-evidence-summary-activity-tests.sql:ro
       - ./db/006_voice_call_recordings.sql:/docker-entrypoint-initdb.d/006-voice-call-recordings.sql:ro
       - ./db/007_manual_demo_follow_up_jobs.sql:/docker-entrypoint-initdb.d/007-manual-demo-follow-up-jobs.sql:ro
+      - ./db/002_agent_activity_logs.sql:/docker-entrypoint-initdb.d/008-agent-activity-logs.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U dira_dev -d dira_dev"]
       interval: 5s

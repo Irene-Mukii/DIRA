@@ -65,8 +65,8 @@ export default async function CallDraftsPage() {
     <div className="space-y-4">
       <h1 className="text-xl font-semibold">Phone-call observation drafts</h1>
       <p className="text-sm text-gray-600 dark:text-gray-300">
-        These came from your recorded follow-up calls. Nothing is saved as an observation until you confirm it
-        against a learner.
+        Confirming a draft assigns it to a learner and saves an observation. Phone-call
+        observations remain marked Recorded until they are separately reviewed on the learner record.
       </p>
       {drafts.length === 0 ? (
         <Card className="p-6 text-sm">No drafts yet.</Card>
@@ -82,7 +82,7 @@ export default async function CallDraftsPage() {
               <div className="flex flex-wrap items-center gap-2">
                 <Badge variant={done ? "default" : "secondary"}>
                   {done
-                    ? "Confirmed"
+                    ? "Learner assigned"
                     : draft.status === "ready"
                       ? "Learner suggested"
                       : "Needs learner"}
@@ -98,6 +98,7 @@ export default async function CallDraftsPage() {
               {done ? (
                 <p className="text-sm text-gray-600 dark:text-gray-300">
                   Saved for {nameById.get(draft.confirmed_learner_id ?? "") ?? "the chosen learner"}.
+                  Review its Recorded status on the learner record before treating it as confirmed.
                 </p>
               ) : (
                 <div className="flex flex-wrap items-center gap-2">

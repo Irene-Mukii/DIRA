@@ -27,9 +27,10 @@ Dira supports teachers in collecting and reviewing evidence about learners over 
 | Styling | Global CSS and reusable UI components | Responsive desktop/mobile presentation and shared visual language | Dira code |
 | Model | GLM-5.3 through the Z.AI chat-completions API | Reason over bounded workflow context and select permitted tools | Server adapter implemented; `ZAI_API_KEY` must be configured and live execution remains unverified |
 | Model abstraction | `lib/models.ts` | Keep provider/model configuration replaceable and server-side | Dira code |
-| Agent orchestration | `lib/agent/orchestrator.ts` | Decide which agent action to run and coordinate the workflow | Dira code |
+| Agent orchestration | `lib/agent/orchestrator.ts` and `lib/agent/suggest-test-graph.ts` | Run bounded scheduled follow-up work and coordinate the Suggest Test evidence, retrieval, GLM-5.3, validation, and persistence stages with LangGraph.js | Dira code; Suggest Test graph is in the request path |
 | MCP client | `lib/agent/mcp-client.ts` | Streamable HTTP transport through the official MCP SDK, OAuth-provider injection, tool discovery/invocation, request timeouts, and error propagation | Client foundation implemented; secure OAuth session/token persistence and live Keeper verification remain |
-| Dira MCP server | `app/api/mcp/server/route.ts` + `lib/mcp-tools/dira-server.ts` | Expose Dira observation and scheduled-call capabilities to authorized MCP clients | Stateless Streamable HTTP demo endpoint implemented with a shared bearer token; not production-grade user authorization |
+| Dira MCP server | `app/api/mcp/server/route.ts` + `lib/mcp-tools/dira-server.ts` | Expose 13 Dira MCP tools, including the high-level Suggest Test workflow and four bounded supporting capabilities | Stateless Streamable HTTP demo endpoint implemented with a shared bearer token; not production-grade user authorization |
+| Suggest Test MCP tools | `lib/mcp-tools/suggestionWorkflowTools.ts` | Retrieve authorized learner evidence/history, retrieve approved-source material, and persist a validated suggestion | Dira-owned MCP tools; invoked by the LangGraph using the official SDK's in-memory client/server transport |
 | Scheduled agent trigger | `app/api/internal/follow-up-agent/route.ts` + `lib/agent/orchestrator.ts` | Wake a bounded GLM agent that uses Dira's MCP client to inspect, prepare, and dispatch follow-up work | Agent and protected trigger implemented; hosting scheduler is not selected/configured |
 | Dira MCP tool: observation | `lib/mcp-tools/logObservation.ts` | Validate and persist a teacher observation through the approved tool workflow | Dira-owned tool |
 | Dira MCP tool: test suggestion | `lib/mcp-tools/suggestTest.ts` | Propose a small, practical classroom test grounded in learner evidence | Dira-owned tool |
@@ -40,7 +41,7 @@ Dira supports teachers in collecting and reviewing evidence about learners over 
 | Outbound voice | Africa's Talking Voice API | Initiate a scheduled teacher follow-up; audio capture is a later phase | Server-side request adapter, demo-gated due dispatcher, and teacher-scoped development status page implemented; credentials, callbacks, teacher authentication/consent, and live calls remain unverified |
 | Calendar MCP server (borrowed) | Keeper.sh MCP server — repository: https://github.com/ridafkih/keeper.sh; hosted MCP endpoint: `https://www.keeper.sh/mcp` | Give Dira one MCP interface for connected Google Calendar, Outlook/Microsoft 365, iCloud, Fastmail, CalDAV, and read-only ICS/iCal feeds | Selected; client transport and bounded read-only adapter implemented, but OAuth authorization and an authenticated tool call remain unverified |
 | Calendar provider access | Calendar accounts connected through Keeper.sh | Supply lesson schedule and timing context for follow-up workflows | External calendar providers; Dira should call the borrowed server through MCP rather than label a direct provider API adapter as an MCP server |
-| Educational-source retrieval | External retrieval/search adapter to approved sources (e.g. IBEF, AMI, WWC) | Quickly retrieve relevant educational guidance when generating a suggested classroom test | Required agent behaviour; exact provider/adapter must be selected and verified. No persistent source catalogue table in PostgreSQL for the MVP |
+| Educational-source retrieval | `lib/services/education-retrieval.ts` | Discover and return bounded, relevance-ranked excerpts and per-source outcomes from the configured IB, EEF, AMI, and WWC domains | Implemented without a persistent source catalogue; actual live source access still requires a run against those sites |
 | Logging | `lib/agent/logger.ts` and `agent_activity_logs` concept | Trace runs, tool calls, status, latency, model, and errors | Dira code/data design; do not log private chain-of-thought |
 | Validation | `lib/validators/` | Validate request shape, ownership, IDs, and safety constraints | Dira code |
 | Synthetic data | `scripts/clean_dataset.py`, `scripts/generate_synthetic_data.py` | Prepare synthetic development/evaluation data | Repository scripts |
@@ -61,10 +62,14 @@ Dira supports teachers in collecting and reviewing evidence about learners over 
 - Teacher-facing pages and reusable components.
 - Agent orchestration, model abstraction, MCP client, and activity logging.
 - Dira's own MCP tools: `log_observation`, `prepare_daily_follow_up_queue`,
-  `list_due_follow_ups`, and `dispatch_one_due_follow_up`. Scheduled runs cannot
-  call `log_observation`; model-generated remarks are not valid observation evidence.
-- `suggest_test` and evidence-summary capabilities exist in Dira, but are not tools
-  on the deployed Dira MCP endpoint yet.
+  `list_due_follow_ups`, `dispatch_one_due_follow_up`, the three evidence
+  capabilities, the high-level Suggest Test lifecycle tools, and a transcript
+  draft tool. The deployed Dira server currently registers 13 tools.
+- `suggest_test` starts the LangGraph.js workflow; its four supporting MCP tools
+  retrieve authorized evidence/history and education resources, then persist the
+  validated proposal. The graph uses the MCP SDK's in-process transport rather
+  than recursively calling the high-level tool or making a loopback HTTP request.
+- `build_evidence_summary` remains an exposed read-only Dira MCP capability.
 - Database schema, application validation, test lifecycle, and evidence-card assembly.
 
 **External/borrowed services and MCP**
@@ -72,7 +77,7 @@ Dira supports teachers in collecting and reviewing evidence about learners over 
 - OpenAI Audio Transcriptions API for MVP speech-to-text; replace before go-live with a reviewed self-hosted open-weight model.
 - Africa's Talking SMS and Voice APIs.
 - **Keeper.sh: the selected borrowed, third-party calendar MCP server** ([repository](https://github.com/ridafkih/keeper.sh), [MCP documentation](https://www.keeper.sh/docs/mcp)). Its documented providers include Google Calendar, Outlook/Microsoft 365, iCloud, Fastmail, CalDAV, and pull-only iCal/ICS feeds. It does not document a native Calendly integration, so do not claim direct Calendly support. The hosted MCP endpoint uses streamable HTTP and OAuth 2.1. The hosted free plan documents 25 API/MCP requests per day; verify this is enough for development and the demo, or deliberately evaluate self-hosting.
-- An external retrieval/search adapter for educational sources, to be selected and tested. This is not assumed to be an MCP server unless we explicitly integrate a real MCP server for retrieval.
+- Educational-source discovery reuses `education-retrieval.ts` and the configured IB, EEF, AMI, and WWC official domains. This adapter is invoked as the registered `retrieve_education_resources` MCP tool; it is not a borrowed external MCP server.
 
 An external API is not automatically an MCP server. The borrowed-server requirement is met only when Dira actually connects to and invokes the external MCP server through the MCP protocol. For the calendar integration, the intended design is to use Keeper.sh through Dira's MCP client, not to call Google Calendar's REST API directly and describe that as borrowed MCP usage. The `lib/external-mcp/` folder in the current tree is an integration/adaptation area; its name alone does not prove that each provider is an MCP server. Keeper documents an MCP endpoint at `https://www.keeper.sh/mcp` using streamable HTTP and OAuth 2.1 for the hosted service. Dira’s client must support the required transport and authentication flow; verify this before implementation is marked complete. The hosted free plan currently documents a limit of 25 API/MCP requests per day, so estimate demo calls and confirm the plan is sufficient. If that limit or the authentication flow blocks the demo, explicitly decide whether to self-host Keeper rather than silently bypassing MCP. The Keeper integration remains planned until connection, authentication, tool calls, and returned data have been tested end to end.
 
@@ -102,15 +107,30 @@ flowchart TD
     I --> J[log_observation MCP tool]
     J --> K[(PostgreSQL: save observation and provenance)]
     K --> L[Confirm save and refresh Learner Record]
-    L --> M[Agent/tool reviews relevant evidence]
-    M --> N[suggest_test MCP tool]
-    N --> O[Validate suggestion and evidence references]
-    O --> P[Try This screen shows activity and supporting observations]
+    L --> M[Teacher clicks Suggest Test]
+    M --> N[POST /api/mcp/suggest-test]
+    N --> O[Resolve trusted teacher context and validate request]
+    O --> PG1[LangGraph.js Suggest Test workflow]
+    PG1 --> TE1[MCP: get_learner_observations]
+    PG1 --> TE2[MCP: get_previous_suggestions]
+    TE1 --> PG1
+    TE2 --> PG1
+    PG1 --> ELIGIBLE{Eligible reviewed evidence?}
+    ELIGIBLE -->|No| ERR[Return safe evidence status]
+    ELIGIBLE -->|Yes| EDU1[MCP: retrieve_education_resources]
+    EDU1 --> PG1
+    PG1 --> CTX[Prepare cited evidence, history, and retrieved excerpts]
+    CTX --> GLM1[Existing Z.AI GLM-5.3 client generates activity]
+    GLM1 --> VALIDATE[Validate response and source references]
+    VALIDATE -->|Invalid, one retry left| GLM1
+    VALIDATE -->|Valid| PERSIST[MCP: persist_test_suggestion]
+    VALIDATE -->|Invalid after retry| ERR
+    PERSIST --> DB1[(PostgreSQL: persist SUGGESTED snapshot and evidence links)]
+    DB1 --> P[Try This screen shows persisted proposal and sources]
     P --> Q{Teacher decision}
-    Q -->|Accept| R[Record test as accepted/planned]
-    Q -->|Defer| S[Record deferred status]
-    Q -->|Request another| N
-    R --> T[Teacher tries activity in class]
+    Q -->|Accept| ACCEPT[Validate and update same test to ACCEPTED]
+    Q -->|Suggest another| PG1
+    ACCEPT --> T[Teacher tries activity in class]
     T --> U[Teacher logs outcome as another observation / linked result]
     U --> V[(PostgreSQL: save outcome and test linkage)]
     V --> W[Build evidence-grounded summary from source records]
@@ -126,9 +146,9 @@ flowchart TD
 3. **Capture an observation.** The teacher opens the chat-style Log Observation page. A single composer supports typed text or an in-app voice recording. A phone-based capture is a separate route initiated through Africa's Talking Voice API.
 4. **Transcribe and validate when needed.** The MVP sends telephone recordings through the backend to OpenAI's transcription API. This is a temporary security exception because recordings may contain learner information. Before go-live, replace it with a security-reviewed self-hosted open-weight model in DIRA-controlled infrastructure. The backend validates teacher authorisation, learner identity, required fields, and duplicate/retry identifiers.
 5. **Persist through the Dira tool.** Core observation writes go through `log_observation` MCP, which persists the validated observation in PostgreSQL. Show success only after persistence is confirmed.
-6. **Retrieve educational guidance quickly.** Before generating the suggested test, the agent attempts to retrieve relevant material from approved external educational sources. The request has a short, configurable timeout. If retrieval succeeds, relevant guidance and source details are passed into the suggestion step. If it fails or times out, the workflow continues with the learner evidence and the model's available knowledge; Dira must not pretend it retrieved or cited an external source. Retrieval failure must not block the teacher workflow.
-7. **Suggest a small test.** `suggest_test` proposes a feasible classroom activity and identifies the actual observation IDs that support the question. Insufficient or contradictory learner evidence must be acknowledged. Educational guidance can inform an activity but cannot replace or overrule the learner-specific evidence.
-8. **Teacher decides.** The teacher accepts, defers, or asks for another suggestion. The UI/application records the state change; an `approve_test` MCP tool is not required merely to support a button.
+6. **Run the Suggest Test graph.** The API route starts LangGraph.js after trusted teacher resolution and request validation. The graph uses actual supporting MCP calls for authorized evidence, previous suggestions, and bounded education-resource retrieval. The retrieved excerpts, source metadata/status, reviewed observations, class grade/stream, and prior activities are prepared as GLM-5.3 context; no learner name or ID is sent to education sites.
+7. **Generate, validate, and persist.** The existing Z.AI GLM-5.3 client writes the activity. Application validation checks the structured result, duration, required instructions/outcome/criteria, citations, and that any named educational reference came from a successful retrieval. Invalid output gets one retry and is never replaced with a deterministic template. Valid output is persisted as `SUGGESTED` with the existing evidence links and submission idempotency key before it is returned.
+8. **Teacher decides.** Acceptance updates that persisted suggestion to `ACCEPTED`; regeneration uses the preceding proposal and history as model context, links the new row with `supersedes_test_id`, and persists the replacement. The teacher-facing Suggest Test UI offers accept or suggest-another; no separate defer status is implemented in this workflow.
 9. **Record the outcome.** After trying the activity, the teacher records what happened. Link the outcome to the test where applicable; do not infer an outcome from a calendar event.
 10. **Build the Learner Evidence Card.** The evidence-summary capability assembles questions explored, tests conducted, and observed outcomes from underlying records. Every factual claim is checked against source evidence.
 11. **Teacher reviews the card.** The card supports professional judgement; it is not a verdict, diagnosis, learner ranking, or pathway assignment.
@@ -165,6 +185,8 @@ flowchart TB
         CALL_DISPATCH[Protected due-call dispatcher]
         VOICE_PROMPT[Static Africa's Talking voice prompt]
         ORCH[Agent orchestrator]
+        SUGGEST_GRAPH[LangGraph.js Suggest Test graph]
+        LOCAL_MCP[In-process MCP SDK client/server]
         MODEL[Model abstraction: lib/models.ts]
         CLIENT[MCP client: discover, invoke, validate, trace]
         LOG[Activity logger]
@@ -174,6 +196,10 @@ flowchart TB
     subgraph OWN["Dira-owned MCP tools"]
         LOGOBS[log_observation]
         SUGGEST[suggest_test]
+        GETEVIDENCE[get_learner_observations]
+        GETHISTORY[get_previous_suggestions]
+        GETRESOURCES[retrieve_education_resources]
+        SAVESUGGESTION[persist_test_suggestion]
         SUMMARY[Evidence summary capability]
     end
 
@@ -210,14 +236,25 @@ flowchart TB
     AUTH --> DBACCESS
     DBACCESS <--> PG
     AUTH --> ORCH
+    AUTH --> SUGGEST_GRAPH
     ORCH <--> MODEL
     MODEL <--> GLM
+    SUGGEST_GRAPH <--> MODEL
+    SUGGEST_GRAPH <--> LOCAL_MCP
+    LOCAL_MCP <--> GETEVIDENCE
+    LOCAL_MCP <--> GETHISTORY
+    LOCAL_MCP <--> GETRESOURCES
+    LOCAL_MCP <--> SAVESUGGESTION
+    GETEVIDENCE --> PG
+    GETHISTORY --> PG
+    GETRESOURCES --> EDU
+    SAVESUGGESTION --> PG
     ORCH --> CLIENT
     CLIENT --> LOGOBS
     CLIENT --> SUGGEST
     CLIENT --> SUMMARY
+    SUGGEST --> SUGGEST_GRAPH
     LOGOBS --> PG
-    SUGGEST <--> PG
     SUMMARY --> PG
     ORCH --> LOG
     CLIENT --> LOG
@@ -227,7 +264,6 @@ flowchart TB
     ORCH -->|MCP protocol| CLIENT
     CLIENT <-->|MCP protocol| KEEPER
     KEEPER <--> CALPROV
-    ORCH -->|bounded retrieval request| EDU
     ORCH --> ATSMS
     ATVOICE --> STT
     PG --- RECORDS
@@ -236,7 +272,8 @@ flowchart TB
 
 **Diagram notes**
 - The frontend calls authorised application routes/server actions. It does not connect directly to PostgreSQL or expose model/provider secrets.
-- The agent uses the model for reasoning and the MCP client to discover/invoke Dira tools. Deterministic validation must still enforce safety; the model alone is not a security boundary.
+- The Suggest Test API invokes the LangGraph.js graph. Its nodes call four supporting Dira MCP tools over the official SDK's in-process transport; those tools reuse authorized database services and the existing educational retrieval service. The graph invokes `lib/models.ts` for GLM-5.3 and validates its output before the persistence tool runs.
+- The separate remote MCP client remains for scheduled follow-up and the selected Keeper.sh integration. Keeper is future scope for Suggest Test and is not called by this graph. Deterministic validation must still enforce safety; the model alone is not a security boundary.
 - Core observation writes go through `log_observation`. Other application reads may use the authorised data-access layer; not every simple database read needs an LLM or MCP call.
 - Africa's Talking handles both SMS and outbound voice. OpenAI performs MVP transcription; it does not initiate calls. Use a self-hosted open-weight model before go-live.
 - The due-call dispatcher is a deterministic server-side workflow, not an LLM action. It only submits calls after schedule revalidation and only in local demo mode; the public voice callback returns a fixed prompt and does not record audio.
@@ -488,14 +525,14 @@ The proposed observation route and documentation files may not yet exist. Add th
 
 ### Current required behaviour
 
-Every `suggest_test` workflow should first attempt a quick external lookup against approved educational sources relevant to the question and age/context, using the selected retrieval adapter. This is a bounded attempt, not an indefinite dependency. Define a short configurable timeout appropriate for the demo and production target (for example, a few seconds, tuned through tests rather than treated as a final universal value). Apply request cancellation where supported, avoid uncontrolled retries, and record retrieval status and elapsed time.
+Every `suggest_test` workflow makes a bounded attempt to discover relevant content from the four configured official education domains using grade, stream, observation category, tentative theme, subject, and activity context. It does not send learner IDs or raw observation narratives to those sites, and it does not infer age where no age field exists. Sitemap/page sizes, page count, and request time are bounded; each source is queried independently and records a retrieval status, error classification, duration, and available HTTP status.
 
-- **Success:** pass relevant excerpts/structured results and source identifiers/URLs to the suggestion step. Keep learner evidence distinct from external guidance. Cite only material actually returned by the retrieval adapter.
-- **Timeout or provider failure:** continue generating the suggestion from learner evidence and the model's available knowledge. Mark that external guidance was unavailable for this run; do not fabricate citations. Retrieval failure must not prevent a teacher from completing the workflow.
+- **Success:** pass relevant excerpts/structured results and source identifiers/URLs to the GLM-5.3 context. Keep learner evidence distinct from external guidance. Cite only successfully retrieved material.
+- **Timeout, access restriction, HTTP/network, discovery, extraction, or unsupported-content failure:** source failures are independent. Continue generation with the available learner evidence and retrieved sources, record per-source outcomes, and do not fabricate citations. Retrieval failure must not trigger the legacy deterministic generator.
 - **No relevant result:** treat as no retrieved guidance, not as proof that no guidance exists. Continue with the same fallback behaviour.
 - **Safety:** external material informs a possible classroom test; it does not label, diagnose, rank, or assign a learner a pathway, and does not override the teacher. Do not send unnecessary learner-identifying data to external retrieval services.
 
-The source access mechanism is a separate integration from the hosted GLM model. Do not assume GLM-5.3 has browsing/search capabilities unless the configured provider explicitly documents and the team verifies them.
+The source access mechanism is separate from the hosted GLM model. GLM-5.3 receives source excerpts as data in the generation context; it does not perform browsing. The LangGraph performs at most one validation retry and persists only a validated output.
 
 ### Deferred PostgreSQL enhancement
 

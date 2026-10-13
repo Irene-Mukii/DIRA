@@ -1,10 +1,8 @@
 import type { ObservationType } from "../db/schema";
 import { createHash, randomUUID } from "node:crypto";
-import {
-	retrieveEducationEvidence,
-	type EducationSourceDefinition,
-	type EducationRetrievalStatus,
-	type EducationSource,
+import type {
+	EducationRetrievalStatus,
+	EducationSource,
 } from "../services/education-retrieval";
 
 export interface SuggestTestContext {
@@ -12,7 +10,7 @@ export interface SuggestTestContext {
 	school_id: string;
 }
 
-function proposalFingerprint(suggestion: Extract<SuggestTestResult, { ok: true }>): string {
+export function proposalFingerprint(suggestion: Extract<SuggestTestResult, { ok: true }>): string {
 	const snapshot = {
 		learner_id: suggestion.learner_id,
 		exploration_question: suggestion.exploration_question,
@@ -25,6 +23,7 @@ function proposalFingerprint(suggestion: Extract<SuggestTestResult, { ok: true }
 		suggested_activity: suggestion.suggested_activity,
 		what_to_log_afterward: suggestion.what_to_log_afterward,
 		limitations: suggestion.limitations,
+		educational_references: suggestion.educational_references ?? [],
 	};
 	return createHash("sha256").update(JSON.stringify(snapshot)).digest("hex");
 }
@@ -68,6 +67,8 @@ export interface SuggestedActivity {
 	purpose: string;
 	steps: string[];
 	what_to_observe: string[];
+	intended_outcome?: string;
+	assessment_criteria?: string[];
 }
 
 export interface EvidenceSignal {
@@ -96,6 +97,8 @@ export type SuggestTestResult =
 			ok: true;
 			status: "proposed";
 			proposal_id?: string;
+			test_id?: string;
+			duplicate?: boolean;
 			retrieval_status?: EducationRetrievalStatus;
 			educational_sources?: EducationSource[];
 			learner_id: string;
@@ -109,6 +112,7 @@ export type SuggestTestResult =
 			under_corroborated_signals: EvidenceSignal[];
 			prior_test_ids: string[];
 			limitations: string[];
+			educational_references?: Array<{ key: string; url: string; title: string }>;
 		};
 
 export interface PriorTestRow {
@@ -150,6 +154,20 @@ export class SuggestionPersistenceError extends Error {
 	}
 }
 
+export type SuggestionEvidencePreparation =
+	| Extract<SuggestTestResult, { ok: false }>
+	| {
+			ok: true;
+			status: "ready";
+			learner_id: string;
+			candidate: EvidenceSignal;
+			cited_observations: EvidenceCitation[];
+			grouped_observations: GroupedObservationType[];
+			under_corroborated_signals: EvidenceSignal[];
+			prior_test_ids: string[];
+			limitations: string[];
+		};
+
 interface SignalGroup {
 	observation_type: ObservationType;
 	observations: SuggestionObservation[];
@@ -157,6 +175,7 @@ interface SignalGroup {
 
 const REVIEWED_STATUSES = new Set(["not_required", "confirmed", "updated"]);
 
+/* Legacy deterministic reference only; the active workflow calls the LangGraph generator. */
 const ACTIVITY_BY_TYPE: Partial<Record<ObservationType, SuggestedActivity>> = {
 	participation: {
 		title: "Rotating-role group challenge",
@@ -393,30 +412,17 @@ export function findUnderCorroboratedSignals(
 	});
 }
 
-function activityQuestion(type: ObservationType, theme: string | null): string {
-	const topic = theme ? ` (tentatively tagged ${theme.toLowerCase()})` : " in this type of activity";
-	switch (type) {
-		case "participation":
-			return `What group arrangements help the learner contribute ideas${topic}?`;
-		case "academic":
-			return `Which task representation or prompt helps the learner explain their approach${topic}?`;
-		case "behavioral":
-			return `How does the learner approach a familiar task when optional structure is available${topic}?`;
-		case "extracurricular":
-			return `How does the learner choose to contribute in a low-pressure enrichment activity${topic}?`;
-		default:
-			return "What additional classroom context would help clarify these observations?";
-	}
-}
-
-export function buildSuggestion(
+export function prepareSuggestionEvidence(
 	learnerId: string,
 	observations: SuggestionObservation[],
 	priorTests: PriorTestRow[],
-): SuggestTestResult {
+): SuggestionEvidencePreparation {
 	const grouped = groupObservationsByType(observations);
 	const signals = findUnderCorroboratedSignals(observations);
-	const eligibleCount = grouped.reduce((sum, group) => sum + group.eligible_observation_ids.length, 0);
+	const eligibleCount = grouped.reduce(
+		(sum, group) => sum + group.eligible_observation_ids.length,
+		0,
+	);
 
 	if (observations.length === 0) {
 		return {
@@ -439,17 +445,17 @@ export function buildSuggestion(
 		};
 	}
 
-	const candidates = signals.filter(
-		(signal) => signal.kind === "repeated_signal" && signal.status === "under_corroborated",
+	const candidate = signals.find(
+		(signal) => signal.kind === "repeated_signal" &&
+			signal.status === "under_corroborated",
 	);
-	const candidate = candidates.find((signal) => Boolean(ACTIVITY_BY_TYPE[signal.observation_type]));
 	if (!candidate) {
 		return {
 			ok: false,
 			status: signals.length > 0 ? "no_suitable_activity" : "insufficient_evidence",
 			learner_id: learnerId,
 			message: signals.length > 0
-				? "Repeated signals exist, but no low-preparation activity is mapped to their observation type."
+				? "No under-corroborated repeated signal is suitable for a follow-up activity."
 				: "There is not yet a repeated, independently dated signal suitable for a follow-up activity.",
 			grouped_observations: grouped,
 			under_corroborated_signals: signals,
@@ -473,13 +479,6 @@ export function buildSuggestion(
 		};
 	}
 
-	const rejectedCount = matchingEvidenceTests.filter(
-		(test) => test.status === "SUGGESTED",
-	).length;
-	const activity = rejectedCount % 2 === 1
-		? ALTERNATE_ACTIVITY_BY_TYPE[candidate.observation_type] ??
-			ACTIVITY_BY_TYPE[candidate.observation_type]!
-		: ACTIVITY_BY_TYPE[candidate.observation_type]!;
 	const citedIds = new Set(candidate.observation_ids);
 	const citedObservations = uniqueObservations(observations)
 		.filter((observation) => citedIds.has(observation.observation_id))
@@ -492,6 +491,82 @@ export function buildSuggestion(
 			activity_context: observation.activity_context,
 			content: observation.reviewed_observation ?? observation.original_observation,
 		}));
+
+	return {
+		ok: true,
+		status: "ready",
+		learner_id: learnerId,
+		candidate,
+		cited_observations: citedObservations,
+		grouped_observations: grouped,
+		under_corroborated_signals: signals,
+		prior_test_ids: priorTests.map((test) => test.test_id),
+		limitations: [
+			"possible_theme is a tentative synthetic/teacher-entered tag, not a verified conclusion.",
+			"Exact-text duplicate detection cannot detect paraphrases or determine whether different narratives conflict.",
+			...(candidate.variation_observation_ids.length
+				? ["Cited observations vary in wording; this is context to explore, not an automatically resolved contradiction."]
+				: []),
+			"A single activity cannot establish a stable learner characteristic.",
+		],
+	};
+}
+
+function activityQuestion(type: ObservationType, theme: string | null): string {
+	const topic = theme ? ` (tentatively tagged ${theme.toLowerCase()})` : " in this type of activity";
+	switch (type) {
+		case "participation":
+			return `What group arrangements help the learner contribute ideas${topic}?`;
+		case "academic":
+			return `Which task representation or prompt helps the learner explain their approach${topic}?`;
+		case "behavioral":
+			return `How does the learner approach a familiar task when optional structure is available${topic}?`;
+		case "extracurricular":
+			return `How does the learner choose to contribute in a low-pressure enrichment activity${topic}?`;
+		default:
+			return "What additional classroom context would help clarify these observations?";
+	}
+}
+
+export function buildSuggestion(
+	learnerId: string,
+	observations: SuggestionObservation[],
+	priorTests: PriorTestRow[],
+): SuggestTestResult {
+	const preparation = prepareSuggestionEvidence(learnerId, observations, priorTests);
+	if (!preparation.ok) return preparation;
+	const { candidate, cited_observations: citedObservations } = preparation;
+	if (!candidate) {
+		return {
+			ok: false,
+			status: "no_suitable_activity",
+			learner_id: learnerId,
+			message: "No low-preparation activity is mapped to this observation type.",
+			grouped_observations: preparation.grouped_observations,
+			under_corroborated_signals: preparation.under_corroborated_signals,
+		};
+	}
+	const activityByType = ACTIVITY_BY_TYPE[candidate.observation_type];
+	if (!activityByType) {
+		return {
+			ok: false,
+			status: "no_suitable_activity",
+			learner_id: learnerId,
+			message: "No low-preparation activity is mapped to this observation type.",
+			grouped_observations: preparation.grouped_observations,
+			under_corroborated_signals: preparation.under_corroborated_signals,
+		};
+	}
+
+	const rejectedCount = priorTests.filter((test) =>
+		test.evidence_ids.some((id) => candidate.observation_ids.includes(id)),
+	).filter(
+		(test) => test.status === "SUGGESTED",
+	).length;
+	const activity = rejectedCount % 2 === 1
+		? ALTERNATE_ACTIVITY_BY_TYPE[candidate.observation_type] ??
+			activityByType
+		: activityByType;
 	const question = activityQuestion(candidate.observation_type, candidate.possible_theme);
 
 	return {
@@ -508,148 +583,26 @@ export function buildSuggestion(
 			"Describe observable actions and any prompts or support offered, using the teacher's own wording.",
 			"Note what differed from the cited observations; avoid rating the learner from one activity.",
 		],
-		grouped_observations: grouped,
-		under_corroborated_signals: signals,
-		prior_test_ids: priorTests.map((test) => test.test_id),
-		limitations: [
-			"possible_theme is a tentative synthetic/teacher-entered tag, not a verified conclusion.",
-			"Exact-text duplicate detection cannot detect paraphrases or determine whether different narratives conflict.",
-			...(candidate.variation_observation_ids.length
-				? ["Cited observations vary in wording; this is context to explore, not an automatically resolved contradiction."]
-				: []),
-			"A single activity cannot establish a stable learner characteristic.",
-		],
+		grouped_observations: preparation.grouped_observations,
+		under_corroborated_signals: preparation.under_corroborated_signals,
+		prior_test_ids: preparation.prior_test_ids,
+		limitations: preparation.limitations,
 	};
 }
 
 export async function suggestTest(
 	learnerIdInput: string,
 	context: SuggestTestContext,
+	options: { submission_id?: string; supersedes_test_id?: string } = {},
 ): Promise<SuggestTestResult> {
-	const learnerId = learnerIdInput.trim();
-	if (!learnerId || !context.teacher_id.trim() || !context.school_id.trim()) {
-		throw new Error("learner_id and trusted teacher/school context are required");
-	}
-
-	const { pool } = await import("../db/client");
-	const teacher = await pool.query(
-		`SELECT 1 FROM teachers WHERE teacher_id = $1 AND school_id = $2 LIMIT 1`,
-		[context.teacher_id, context.school_id],
-	);
-	if (!teacher.rowCount) {
-		return {
-			ok: false,
-			status: "teacher_not_authorized",
-			learner_id: learnerId,
-			message: "The trusted teacher is not authorized for the selected school.",
-			grouped_observations: [],
-			under_corroborated_signals: [],
-		};
-	}
-	const assignment = await pool.query(
-		`SELECT 1
-		 FROM learner_enrollments e
-		 JOIN timetable_assignments ta
-		   ON ta.class_id = e.class_id
-		  AND ta.school_id = e.school_id
-		  AND ta.academic_year = e.academic_year
-		 WHERE e.learner_id = $1
-		   AND e.school_id = $2
-		   AND e.enrolment_status <> 'Withdrawn'
-		   AND e.enrolled_from <= CURRENT_DATE
-		   AND (e.enrolled_to IS NULL OR e.enrolled_to >= CURRENT_DATE)
-		   AND ta.teacher_id = $3
-		   AND ta.valid_from <= CURRENT_DATE
-		   AND (ta.valid_to IS NULL OR ta.valid_to >= CURRENT_DATE)
-		 LIMIT 1`,
-		[learnerId, context.school_id, context.teacher_id],
-	);
-	if (!assignment.rowCount) {
-		return {
-			ok: false,
-			status: "learner_not_found",
-			learner_id: learnerId,
-			message: "The learner is not in a currently assigned class for this teacher.",
-			grouped_observations: [],
-			under_corroborated_signals: [],
-		};
-	}
-
-	const observations = await pool.query<SuggestionObservation>(
-		`SELECT observation_id, learner_id, teacher_id, observation_type,
-						original_observation, reviewed_observation, observed_at,
-				observation_date::text AS observation_date,
-						activity_context, subject, term, possible_theme,
-						teacher_review_status
-		 FROM observations
-		 WHERE learner_id = $1 AND school_id = $2
-		   AND EXISTS (
-			 SELECT 1
-			 FROM learner_enrollments e
-			 JOIN timetable_assignments ta
-			   ON ta.class_id = e.class_id
-			  AND ta.school_id = e.school_id
-			  AND ta.academic_year = e.academic_year
-			 WHERE e.learner_id = observations.learner_id
-			   AND e.class_id = observations.class_id
-			   AND e.academic_year = observations.academic_year
-			   AND ta.teacher_id = $3
-			   AND ta.valid_from <= CURRENT_DATE
-			   AND (ta.valid_to IS NULL OR ta.valid_to >= CURRENT_DATE)
-		   )
-		 ORDER BY observed_at ASC, observation_id ASC`,
-		[learnerId, context.school_id, context.teacher_id],
-	);
-	const priorTests = await pool.query<PriorTestRow>(
-		`SELECT t.test_id, t.suggested_activity, t.activity_date, t.status,
-						COALESCE(
-							array_agg(ato.observation_id)
-								FILTER (WHERE ato.observation_id IS NOT NULL),
-							ARRAY[]::text[]
-						) AS evidence_ids
-		 FROM activity_tests t
-		 LEFT JOIN activity_test_observations ato
-			 ON ato.test_id = t.test_id AND ato.learner_id = t.learner_id
-		 WHERE t.learner_id = $1
-			 AND EXISTS (
-				 SELECT 1
-				 FROM learner_enrollments e
-				 JOIN timetable_assignments ta
-				   ON ta.class_id = e.class_id
-				  AND ta.school_id = e.school_id
-				  AND ta.academic_year = e.academic_year
-				 WHERE e.learner_id = t.learner_id
-				   AND e.school_id = $2
-				   AND ta.teacher_id = $3
-				   AND ta.valid_from <= CURRENT_DATE
-				   AND (ta.valid_to IS NULL OR ta.valid_to >= CURRENT_DATE)
-			 )
-		 GROUP BY t.test_id
-		 ORDER BY t.activity_date DESC, t.test_id`,
-		[learnerId, context.school_id, context.teacher_id],
-	);
-
-	const result = buildSuggestion(learnerId, observations.rows, priorTests.rows);
-	if (!result.ok) return result;
-	const educationSources: EducationSourceDefinition[] = [
-		{ key: "IB", name: "International Baccalaureate", url: "https://www.ibo.org/", domain: "ibo.org" },
-		{ key: "EEF", name: "Education Endowment Foundation", url: "https://educationendowmentfoundation.org.uk/", domain: "educationendowmentfoundation.org.uk" },
-		{ key: "AMI", name: "Association Montessori Internationale", url: "https://montessori-ami.org/", domain: "montessori-ami.org" },
-		{ key: "WWC", name: "What Works Clearinghouse", url: "https://ies.ed.gov/ncee/wwc/", domain: "ies.ed.gov" },
-	];
-	const retrieval = await retrieveEducationEvidence(
-		result.cited_observations[0]?.observation_type ?? "other",
-		educationSources,
-	);
-	return {
-		...result,
-		proposal_id: proposalFingerprint(result),
-		retrieval_status: retrieval.status,
-		educational_sources: retrieval.sources,
-	};
+	const { runSuggestTestGraph } = await import("../agent/suggest-test-graph");
+	return runSuggestTestGraph(learnerIdInput, context, {
+		submission_id: options.submission_id ?? randomUUID(),
+		supersedes_test_id: options.supersedes_test_id,
+	});
 }
 
-export async function regenerateSuggestion(
+async function legacyRegenerateSuggestion(
 	input: {
 		learner_id: string;
 		submission_id: string;
@@ -848,7 +801,7 @@ function persistedSuggestion(suggestion: Extract<SuggestTestResult, { ok: true }
 	};
 }
 
-export async function acceptSuggestion(
+async function legacyAcceptSuggestion(
 	input: AcceptSuggestionInput,
 	context: SuggestTestContext,
 ): Promise<AcceptedSuggestionResult> {

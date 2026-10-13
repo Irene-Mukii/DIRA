@@ -19,11 +19,14 @@ import {
   saveCallObservationDrafts,
 } from "@/lib/services/call-observations";
 import {
-  acceptSuggestion,
-  regenerateSuggestion,
   suggestTest,
   SuggestionPersistenceError,
 } from "@/lib/mcp-tools/suggestTest";
+import { registerSuggestionWorkflowTools } from "@/lib/mcp-tools/suggestionWorkflowTools";
+import {
+  acceptSuggestion,
+  regenerateSuggestion,
+} from "@/lib/services/suggestion-workflow";
 
 function toolResult(value: unknown) {
   const text = JSON.stringify(value);
@@ -165,6 +168,8 @@ export function createDiraMcpServer(): McpServer {
     { name: "dira", version: "1.0.0" },
     { capabilities: {} },
   );
+
+  registerSuggestionWorkflowTools(server, async () => resolveTeacherContext());
 
   server.registerTool(
     "prepare_daily_follow_up_queue",
@@ -346,18 +351,21 @@ export function createDiraMcpServer(): McpServer {
     {
       title: "Suggest a learner activity",
       description:
-        "For an explicitly selected learner in the server-resolved teacher's assigned classes, assess reviewed local observations and retrieve bounded guidance from the four approved education sources. The proposal is not saved unless accepted or rejected for regeneration.",
+        "Start the bounded LangGraph Suggest Test workflow for one explicitly selected learner. The workflow retrieves authorized evidence and previous suggestions, invokes approved-source retrieval and GLM-5.3, validates the result, and persists a SUGGESTED proposal.",
       inputSchema: {
         learner_id: z.string().trim().min(1).max(200),
+        submission_id: z.string().trim().min(1).max(200),
       },
     },
-    async ({ learner_id }) => {
+    async ({ learner_id, submission_id }) => {
       try {
         const context = await resolveTeacherContext();
         if (!context) {
           return toolError("teacher_context_unavailable", "The teacher context is unavailable.");
         }
-        return toolResult(await suggestTest(learner_id, context));
+        return toolResult(
+          await suggestTest(learner_id, context, { submission_id }),
+        );
       } catch (error) {
         logToolFailure("suggest_test", error);
         return toolError("suggestion_failed", "Dira could not prepare a test suggestion.");
@@ -370,7 +378,7 @@ export function createDiraMcpServer(): McpServer {
     {
       title: "Reject a suggestion and prepare another",
       description:
-        "Persist the current deterministic proposal as SUGGESTED (rejected for regeneration), then produce a replacement proposal for the explicitly selected learner.",
+        "Use the previous persisted SUGGESTED proposal as regeneration context, then run the LangGraph workflow to produce and persist a replacement.",
       inputSchema: {
         learner_id: z.string().trim().min(1).max(200),
         submission_id: z.string().trim().min(1).max(200),

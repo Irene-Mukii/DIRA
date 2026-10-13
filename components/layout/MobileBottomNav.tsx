@@ -6,6 +6,7 @@ const navigation = [
   { name: "Learners", href: "/learners", icon: "👥" },
   { name: "Observe", href: "/observation-log", icon: "✏️" },
   { name: "Evidence", href: "/evidence/demo", icon: "📄" },
+  { name: "Logs", href: "/agent-logs", icon: "🛠️" },
 ];
 
 export default function MobileBottomNav() {

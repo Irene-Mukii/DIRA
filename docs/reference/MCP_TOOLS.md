@@ -1,6 +1,6 @@
 # Dira — MCP Tool Specification
 
-> **Authority:** Current tool responsibilities are based on `ARCHITECTURE_Dira_Revised.md`. Legacy source material described `draft_pathway_note` plus an approval gate; that flow is not part of the present MVP. The existing filename `lib/mcp-tools/draftPathwayNote.ts` may remain temporarily, but its current responsibility is evidence-summary/card assembly and it must not assign a pathway.
+> **Authority:** Current tool responsibilities are reflected in this document and `ARCHITECTURE.md`; legacy source material described `draft_pathway_note` plus an approval gate, which is not part of the present MVP. The existing filename `lib/mcp-tools/draftPathwayNote.ts` may remain temporarily, but its current responsibility is evidence-summary/card assembly and it must not assign a pathway.
 
 ## 1. MCP architecture
 
@@ -9,6 +9,14 @@ Dira exposes a Dira-owned, stateless Streamable HTTP MCP server at
 server-side bearer token and is intentionally a single-teacher demo surface, not
 production user authentication. Verify discovery and invocation with an MCP
 client/Inspector after configuring the URL and token.
+
+The server currently registers **13 Dira-owned tools**. The Suggest Test API and
+the public high-level `suggest_test` tool both enter the same LangGraph.js
+workflow. The graph discovers and invokes four supporting MCP tools through the
+official SDK's in-process `InMemoryTransport`; it does not recursively call
+`suggest_test` or loop back through HTTP. The same supporting capabilities are
+also registered on the public Dira MCP server. Internal service functions and
+graph nodes are not counted as MCP tools.
 
 The scheduled Dira agent is a separate component: a hosting scheduler calls the
 protected `POST /api/internal/follow-up-agent` trigger route, which wakes the
@@ -26,21 +34,25 @@ Dira must also use a borrowed server to satisfy the external-MCP requirement. **
 | Tool name | Ownership | Purpose | State-changing? |
 |---|---|---|---|
 | `log_observation` | Dira-owned | Validate and persist a teacher observation with provenance | Yes; creates observation |
-| `suggest_test` | Dira-owned | Review a specified learner's eligible evidence, retrieve bounded official education-source material, and return an unsaved classroom-activity proposal | No; returns a transient proposal |
-| `regenerate_test_suggestion` | Dira-owned | Save the rejected proposal as `SUGGESTED`, then return a replacement proposal | Yes; saves rejected suggestion history |
-| `accept_suggested_test` | Dira-owned | Save the teacher-selected proposal as `ACCEPTED` with evidence/source snapshot and idempotency key | Yes |
-| `build_evidence_summary` | Dira-owned capability | Read saved tests, citations, external-source outcomes and teacher-recorded test outcomes for a specified learner | No; read-only |
+| `suggest_test` | Dira-owned | Start LangGraph.js; retrieve evidence/history/resources, call GLM-5.3, validate, and persist a proposal | Yes; creates one `SUGGESTED` row |
+| `get_learner_observations` | Dira-owned | Return observations and class context for a learner authorized to the trusted teacher | No; read-only |
+| `get_previous_suggestions` | Dira-owned | Return authorized prior proposals, test statuses, linked evidence, and recorded rejection reasons where available | No; read-only |
+| `retrieve_education_resources` | Dira-owned | Discover bounded relevant content on the configured IB, EEF, AMI, and WWC official domains | No; external requests are bounded and per-source status is returned |
+| `persist_test_suggestion` | Dira-owned | Revalidate proposal shape, learner/evidence authorization, and submission idempotency, then save status `SUGGESTED` | Yes; creates one test and its evidence links |
+| `regenerate_test_suggestion` | Dira-owned | Validate the prior proposal, include previous suggestions/history in the model context, and create a linked replacement | Yes; saves a replacement `SUGGESTED` row |
+| `accept_suggested_test` | Dira-owned | Validate the planned date and update the selected persisted suggestion to `ACCEPTED` | Yes; transitions the existing row |
+| `build_evidence_summary` | Dira-owned | Read saved tests, citations, external-source outcomes, and teacher-recorded outcomes | No; read-only |
 | `prepare_daily_follow_up_queue` | Dira-owned MCP tool | Queue eligible schedule rows for the deterministic demo teacher and school; creates jobs only | Yes; idempotent database queue preparation |
 | `list_due_follow_ups` | Dira-owned MCP tool | List due queued jobs for the deterministic demo teacher | No; read-only candidate listing |
 | `dispatch_one_due_follow_up` | Dira-owned MCP tool | Request dispatch of at most one due job after server-side checks | Yes; guarded, atomic call attempt |
+| `save_call_observation_drafts` | Dira-owned MCP tool | Save quoted call-transcript segments as unconfirmed observation drafts | Yes; idempotent draft writes |
 | Keeper tools such as `list_calendars` / `get_events` where exposed | Borrowed external server | Retrieve authorised calendar context via MCP | Provider/tool-dependent; request only minimal read access for MVP |
 
-The Dira MCP endpoint exposes the evidence tools above in addition to
-`log_observation`, `prepare_daily_follow_up_queue`, `list_due_follow_ups`, and
-`dispatch_one_due_follow_up`. Suggestion and acceptance take an explicit learner
-ID; the server-resolved teacher context and current timetable assignments scope
-which learner can be accessed. This remains a single-teacher development/demo
-resolver, not production authentication.
+The first 13 rows are the exact Dira-owned registration inventory. Keeper is a
+separate borrowed server and is not included in that count. Suggestion and
+acceptance take an explicit learner ID; server-resolved teacher context and
+current timetable assignments scope the records. This remains a single-teacher
+development/demo resolver, not production authentication.
 
 ## 3. Shared tool rules
 
@@ -128,19 +140,51 @@ Identify a question worth exploring and propose a small, feasible classroom acti
 
 ```json
 {
-  "learner_id": "string, required; explicit learner selection"
+  "learner_id": "string, required; explicit learner selection",
+  "submission_id": "string, required; idempotency key for this generated proposal"
 }
 ```
 
 The trusted teacher and school are resolved server-side. This is an on-demand
 proposal for one selected learner, not an automatic roster scan at login.
 
-The service checks that the learner belongs to a currently assigned class,
-considers eligible teacher-reviewed observations, preserves contradictory
-wording, and uses deterministic low-preparation activity templates. It then
-attempts bounded retrieval from the four approved official domains using only
-the observation category—not learner text or identifiers—as its external query.
-The result is transient and is not an activity-test row.
+The route validates the request and resolves the trusted teacher before starting
+the graph. The graph authorizes the learner and retrieves grade/stream context,
+eligible reviewed observations, prior suggestions, and their statuses through
+supporting MCP calls. It derives a bounded, non-identifying resource query from
+grade, stream, observation category, tentative theme, subject, and activity
+context. Raw observation text and learner IDs are not sent to education sites.
+The retrieved excerpts and source metadata/status are passed to the existing
+Z.AI GLM-5.3 client with the reviewed evidence and prior suggestion history.
+
+Application code validates the model's structured activity, required
+instructions/outcome/assessment criteria, limits, and reference keys before
+calling `persist_test_suggestion`. Only successful retrieved source keys may be
+referenced. Invalid output receives at most one model retry; there is no
+deterministic activity fallback. The graph persists each validated proposal as
+`SUGGESTED` in the existing `activity_tests` table, including the proposal
+snapshot and relational evidence links, before returning it. `submission_id`
+prevents duplicate persistence on request retries.
+
+```mermaid
+flowchart LR
+    API[Suggest Test route or suggest_test MCP tool] --> GRAPH[LangGraph.js]
+    GRAPH --> EVIDENCE[get_learner_observations MCP]
+    GRAPH --> HISTORY[get_previous_suggestions MCP]
+    EVIDENCE --> GRAPH
+    HISTORY --> GRAPH
+    GRAPH --> ELIGIBLE{Evidence eligible?}
+    ELIGIBLE -->|No| NORESULT[Return evidence status]
+    ELIGIBLE -->|Yes| RESOURCES[retrieve_education_resources MCP]
+    RESOURCES --> GRAPH
+    GRAPH --> CONTEXT[Prepare observations, history, and retrieved excerpts]
+    CONTEXT --> MODEL[Existing GLM-5.3 client]
+    MODEL --> VALIDATE[Application output validation]
+    VALIDATE -->|Invalid, one retry| MODEL
+    VALIDATE -->|Invalid after retry| NORESULT
+    VALIDATE -->|Valid| SAVE[persist_test_suggestion MCP]
+    SAVE --> SAVED[Return persisted proposal]
+```
 
 ### Output
 
@@ -149,45 +193,97 @@ The result is transient and is not an activity-test row.
   "ok": true,
   "learner_id": "verified learner ID",
   "status": "proposed",
+  "test_id": "persisted SUGGESTED test ID",
   "retrieval_status": "success | partial | no_relevant_results | failed",
   "educational_sources": [
     {"key": "EEF", "status": "success", "title": "Retrieved page", "page_url": "exact official URL", "excerpt": "short relevant excerpt"}
   ],
   "limitations": ["What the evidence does not establish"],
-  "suggested_activity": {"title": "...", "steps": []}
+  "suggested_activity": {
+    "title": "...",
+    "steps": [],
+    "intended_outcome": "...",
+    "assessment_criteria": []
+  }
 }
 ```
 
 If a source is unavailable, its per-source status is returned without inventing a
-citation. The overall retrieval status is distinct from the transient suggestion
-status and persisted test lifecycle.
+citation. The overall retrieval status is distinct from the persisted test
+lifecycle status. Resource failures at one source do not stop other source
+requests; failure categories include access restrictions, HTTP/network failures,
+timeouts, discovery/extraction errors, oversized responses, and unsupported
+content. Live access to external sources is not established by unit tests.
 
-## 6. Tool 3 — `regenerate_test_suggestion`
+## 6. Supporting Suggest Test tools
 
-This action saves the rejected proposal snapshot as `SUGGESTED`, including its
-retrieval result and observation links, then returns a replacement proposal.
-`submission_id` makes retries idempotent; `supersedes_test_id` links successive
-rejected versions. A replacement stays transient until it is accepted or itself
-rejected for another regeneration.
+These four MCP tools are called by the LangGraph and are also discoverable on
+the public Dira MCP server. Their internal database/retrieval service functions
+are helpers, not additional MCP tools.
+
+### `get_learner_observations`
+
+Takes an explicit `learner_id`; resolves trusted teacher/school context on the
+server, verifies current class assignment, then returns observation records and
+grade/stream context. Observation review eligibility remains enforced by the
+graph's application-side evidence preparation; pending review records are not
+sent to the model.
+
+### `get_previous_suggestions`
+
+Takes an explicit `learner_id`; returns up to 20 previous suggested, accepted,
+or completed activities with status, dates, citations, and prior reason fields
+where available. No separate rejection-reason input is currently collected by
+the UI.
+
+### `retrieve_education_resources`
+
+Takes a bounded query string with no learner ID. Reuses
+`education-retrieval.ts` and the configured official domains:
+`https://www.ibo.org/`, `https://educationendowmentfoundation.org.uk/`,
+`https://montessori-ami.org/`, and `https://ies.ed.gov/ncee/wwc/`. Sitemap and
+page sizes, child sitemap count, candidate-page count, and request timeout are
+bounded. Each source returns its own status, exact retrieved page (when
+successful), excerpt, error class, retrieval duration, and available HTTP
+status. The service does not claim that a live source was reached unless the
+request actually returned content.
+
+### `persist_test_suggestion`
+
+Takes a validated suggestion snapshot, learner ID, submission ID, and optional
+`supersedes_test_id`. It rechecks the trusted teacher, current learner
+assignment, evidence ownership/review status, and superseded row before saving
+the `SUGGESTED` test and evidence links in one transaction. Existing tables and
+the unique submission ID provide idempotency; no database migration is needed.
+
+## 7. Tool — `regenerate_test_suggestion`
+
+This validates the supplied previous `proposal_id` against its persisted
+`SUGGESTED` row, then invokes the same graph again with the previous proposal
+and suggestion history available to GLM-5.3. The replacement is persisted as a
+new `SUGGESTED` row and linked with `supersedes_test_id`. Retries using the same
+`submission_id` return the saved replacement instead of inserting another test.
 
 ```json
 {
   "learner_id": "string, required",
   "submission_id": "string, required",
-  "supersedes_test_id": "string, optional; prior rejected version"
+  "proposal_id": "64-character hash of the current persisted proposal",
+  "supersedes_test_id": "string, optional; prior suggested version"
 }
 ```
 
-## 7. Tool 4 — `accept_suggested_test`
+## 8. Tool — `accept_suggested_test`
 
-Acceptance persists the current deterministic proposal as `ACCEPTED`, with a
-server timestamp, teacher context, relational observation citations, saved
-suggestion/source snapshot, and idempotency key. It requires a planned date in a
-class assigned to the trusted teacher. A `COMPLETED` test requires a teacher
-observation linked to the test; the observation and test transition are one
-transaction.
+Acceptance loads the persisted proposal rather than re-running the model. It
+rechecks the teacher, learner's enrollment and timetable assignment on the
+planned date, and that cited observations remain eligible, then transitions
+that same test row to `ACCEPTED`. The proposal/source snapshot and relational
+citations remain attached. The acceptance submission ID is stored in the
+existing JSON payload for idempotent retries. A `COMPLETED` test still requires
+a teacher-recorded linked outcome.
 
-## 8. Tool 5 — `build_evidence_summary`
+## 9. Tool — `build_evidence_summary`
 
 ### Input
 
@@ -200,7 +296,7 @@ observation citations, external retrieval outcomes, and teacher-recorded outcome
 within the trusted teacher's currently assigned classes. It does not claim to
 produce an AI verdict or permanent learner classification.
 
-## 9. Common error contract
+## 10. Common error contract
 
 Use a consistent structured error form such as:
 
@@ -217,7 +313,7 @@ Use a consistent structured error form such as:
 
 This is a proposed contract; align the names with the implementation rather than letting each route invent a different shape. Do not return raw stack traces, secrets, or private reasoning.
 
-## 10. MCP verification checklist
+## 11. MCP verification checklist
 
 - Start the Dira MCP server and inspect the transport it actually exposes.
 - Use MCP Inspector or an equivalent client to discover all registered Dira tools and their schemas.

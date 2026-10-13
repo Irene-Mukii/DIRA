@@ -55,30 +55,38 @@ export default function ObservationChat({
   };
 
   useEffect(() => {
+    const controller = new AbortController();
+    let isCurrentRequest = true;
+    const timeoutId = window.setTimeout(() => controller.abort(), 15_000);
+
     const loadObservations = async () => {
       if (!learnerId) {
-        setMessages([{
+        if (isCurrentRequest) setMessages([{
           id: crypto.randomUUID(),
           type: "system",
           content: "Select a learner before loading or saving observations.",
           timestamp: new Date().toISOString(),
           status: "error",
         }]);
-        setIsLoading(false);
+        if (isCurrentRequest) setIsLoading(false);
         return;
       }
 
       try {
         const response = await fetch(
           `/api/mcp/log-observation?learner_id=${encodeURIComponent(learnerId)}`,
-          { cache: "no-store" },
+          { cache: "no-store", signal: controller.signal },
         );
         const payload = await response.json() as LogObservationResponse;
         if (!response.ok) {
           throw new Error(payload.error || "Could not load observations.");
         }
+        if (!Array.isArray(payload.observations)) {
+          throw new Error("The server returned an invalid observations response.");
+        }
 
-        const loadedMessages = payload.observations ?? [];
+        const loadedMessages = payload.observations;
+        if (!isCurrentRequest) return;
         setMessages(loadedMessages.map((observation) => ({
           id: observation.observation_id,
           type: "teacher",
@@ -87,19 +95,30 @@ export default function ObservationChat({
           reviewStatus: observation.teacher_review_status,
         })));
       } catch (error) {
+        if (!isCurrentRequest) return;
+        const message = controller.signal.aborted
+          ? "Loading observations timed out. Please try again."
+          : error instanceof Error
+            ? error.message
+            : "Could not load observations.";
         setMessages([{
           id: crypto.randomUUID(),
           type: "system",
-          content: error instanceof Error ? error.message : "Could not load observations.",
+          content: message,
           timestamp: new Date().toISOString(),
           status: "error",
         }]);
       } finally {
-        setIsLoading(false);
+        if (isCurrentRequest) setIsLoading(false);
       }
     };
 
     void loadObservations();
+    return () => {
+      isCurrentRequest = false;
+      window.clearTimeout(timeoutId);
+      controller.abort();
+    };
   }, [learnerId]);
 
   useEffect(() => {

@@ -84,8 +84,19 @@ export async function reviewObservation(
         throw new ObservationError("submission_id has already been used for a different review", 409);
       }
       const saved = await client.query<ObservationRecord>(
-        `SELECT * FROM observations
-         WHERE observation_id = $1 AND school_id = $2 AND teacher_id = $3`,
+        `SELECT o.* FROM observations o
+         WHERE o.observation_id = $1
+           AND o.school_id = $2
+           AND EXISTS (
+             SELECT 1
+             FROM timetable_assignments ta
+             WHERE ta.class_id = o.class_id
+               AND ta.school_id = o.school_id
+               AND ta.academic_year = o.academic_year
+               AND ta.teacher_id = $3
+               AND ta.valid_from <= CURRENT_DATE
+               AND (ta.valid_to IS NULL OR ta.valid_to >= CURRENT_DATE)
+           )`,
         [observationId, context.school_id, context.teacher_id],
       );
       if (!saved.rows[0]) {
@@ -97,9 +108,20 @@ export async function reviewObservation(
 
     // Locking the row makes review submission a one-way, retry-safe transition.
     const result = await client.query<ObservationRecord>(
-      `SELECT * FROM observations
-       WHERE observation_id = $1 AND school_id = $2 AND teacher_id = $3
-       FOR UPDATE`,
+      `SELECT o.* FROM observations o
+       WHERE o.observation_id = $1
+         AND o.school_id = $2
+         AND EXISTS (
+           SELECT 1
+           FROM timetable_assignments ta
+           WHERE ta.class_id = o.class_id
+             AND ta.school_id = o.school_id
+             AND ta.academic_year = o.academic_year
+             AND ta.teacher_id = $3
+             AND ta.valid_from <= CURRENT_DATE
+             AND (ta.valid_to IS NULL OR ta.valid_to >= CURRENT_DATE)
+         )
+       FOR UPDATE OF o`,
       [observationId, context.school_id, context.teacher_id],
     );
     const observation = result.rows[0];

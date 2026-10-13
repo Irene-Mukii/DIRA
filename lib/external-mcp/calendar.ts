@@ -2,6 +2,8 @@ import "server-only";
 
 import type { McpSession, McpTool } from "@/lib/agent/mcp-client";
 
+// Future scope for independently connected teachers: coordinate recurring
+// classes, calls, and follow-ups when no school timetable applies. Not Suggest Test.
 const MAX_CALENDAR_RANGE_MS = 24 * 60 * 60 * 1000;
 
 export interface CalendarEventRange {

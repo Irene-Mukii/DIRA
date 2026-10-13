@@ -62,6 +62,8 @@ UPDATE activity_tests
 SET accepted_at = COALESCE(accepted_at, activity_date::timestamp)
 WHERE status = 'ACCEPTED';
 
+SET CONSTRAINTS ALL IMMEDIATE;
+
 ALTER TABLE activity_tests
     ALTER COLUMN status SET NOT NULL,
     ADD CONSTRAINT activity_tests_status_check

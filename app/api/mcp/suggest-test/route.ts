@@ -2,11 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod/v4";
 import { resolveTeacherContext } from "@/lib/auth/teacher-context";
 import {
-  acceptSuggestion,
-  regenerateSuggestion,
   suggestTest,
   SuggestionPersistenceError,
 } from "@/lib/mcp-tools/suggestTest";
+import {
+  acceptSuggestion,
+  regenerateSuggestion,
+} from "@/lib/services/suggestion-workflow";
 
 export const runtime = "nodejs";
 
@@ -14,6 +16,7 @@ const requestSchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("suggest"),
     learner_id: z.string().trim().min(1).max(200),
+    submission_id: z.string().trim().min(1).max(200),
   }),
   z.object({
     action: z.literal("accept"),
@@ -61,7 +64,11 @@ export async function POST(request: NextRequest) {
   try {
     const input = parsed.data;
     if (input.action === "suggest") {
-      return NextResponse.json(await suggestTest(input.learner_id, context));
+      return NextResponse.json(
+        await suggestTest(input.learner_id, context, {
+          submission_id: input.submission_id,
+        }),
+      );
     }
     if (input.action === "regenerate") {
       return NextResponse.json(
