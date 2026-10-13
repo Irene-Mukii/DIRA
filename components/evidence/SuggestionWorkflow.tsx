@@ -140,7 +140,7 @@ export default function SuggestionWorkflow({
           onClick={() => void request("suggest")}
           className="rounded-md bg-blue-700 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
         >
-          {busy ? "Preparing suggestion…" : "Suggest a test"}
+          {busy ? "Preparing suggestion…" : "Suggest Test"}
         </button>
       )}
 
