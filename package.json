@@ -9,6 +9,7 @@
     "start": "next start",
     "db:seed:dev": "node scripts/seed-development.cjs --confirm-development",
     "test:follow-ups": "vitest run",
+    "test:suggest-test": "vitest run --config vitest.unit.config.mjs",
     "mcp:server": "tsx scripts/mcp-server.ts",
     "mcp:test": "tsx scripts/test-mcp-client.ts",
     "follow-up:queue": "node --env-file=.env.local scripts/trigger-follow-up.cjs queue",
@@ -16,6 +17,7 @@
     "follow-up:recordings": "node --env-file=.env.local scripts/trigger-follow-up.cjs recordings"
   },
   "dependencies": {
+    "@langchain/langgraph": "^1.5.0",
     "@modelcontextprotocol/sdk": "^1.32.1",
     "dotenv": "^18.0.7",
     "next": "^16.4.0",
