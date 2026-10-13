@@ -48,6 +48,14 @@ Never write “pass” because a feature exists in code or a manual demo looked 
 | EVAL-27 | Teacher follow-up status ownership and truthful wording | Only the server-resolved teacher's jobs and pending reviews appear; provider acceptance is never presented as an answered/completed call | P1 | Not run |
 | EVAL-28 | Follow-up lifecycle failure and callback gaps | Rejection/unknown states show safe next steps; missed/declined/completed are not claimed until authenticated callbacks exist | P1 | Not run |
 | EVAL-29 | Production authentication boundary | Follow-up activity is unavailable without a real authenticated teacher session; configured demo IDs cannot be treated as production identity | P0 | Not run |
+| EVAL-30 | Evidence summary generation | Page-load summary uses only authorized snapshot records; all returned evidence references belong to that snapshot | P0 | Not run |
+| EVAL-31 | Duplicate summary requests | Concurrent component rerenders/repeated requests share one in-flight GLM call | P0 | Not run |
+| EVAL-32 | Assessment requires recorded outcome | Accepted test without an outcome returns `NOT_ASSESSABLE_YET` and does not call GLM or retrieval | P0 | Not run |
+| EVAL-33 | Assessment reference integrity | Fabricated observation or research citations are rejected; invalid output never persists | P0 | Not run |
+| EVAL-34 | Versioned reassessment | Successful reassessment links the preceding row, increments version, and leaves exactly one current assessment | P0 | Not run |
+| EVAL-35 | Failed reassessment preservation | Provider timeout, invalid model response, retrieval failure, or database failure never removes or supersedes the last valid assessment | P0 | Not run |
+| EVAL-36 | Research fallback and status | Empty, partial, and failed retrieval remain explicit; external sources never replace or override the recorded outcome | P0 | Not run |
+| EVAL-37 | Evidence classification/lifecycle separation | `SUPPORTS`, `MIXED`, `CONTRADICTS`, and `INSUFFICIENT_EVIDENCE` render separately from test lifecycle status | P0 | Not run |
 
 ### EVAL-27/28/29 — Teacher follow-up status and lifecycle truth
 
@@ -117,6 +125,31 @@ completed/recording outcomes remain explicitly unavailable.
 
 **Arrange:** Use a learner with multiple questions, tests, linked observations, gaps and at least one contradiction.  
 **Assert:** Card relationships match the database exactly; nothing is mixed across learners/questions; every factual claim points to real evidence; time range is visible; no unsupported final judgement or pathway is generated.
+
+### EVAL-30/31 — Generated summary, citations, and duplicate calls
+
+**Arrange:** Provide authorized synthetic observations/tests; mount the Evidence
+Card in a development-mode lifecycle that repeats effects and issue concurrent
+summary requests.
+**Assert:** The summary is generated from the server-assembled package, its claim
+references are a subset of supplied record IDs, loading/error/retry states render,
+and duplicate in-flight calls result in one GLM request.
+
+### EVAL-32–37 — On-demand, versioned hypothesis assessment
+
+**Arrange:** Use completed and accepted tests, valid and conflicting linked
+observations, controlled retrieved sources, and a pre-existing current assessment.
+**Act:** Assess or reassess explicitly; inject missing outcomes, invalid model
+citations, provider failures, retrieval partial/empty/failure, and a persistence
+failure.
+**Assert:** No outcome means `NOT_ASSESSABLE_YET` without model/retrieval calls.
+Successful assessment stores only one current immutable version, links and
+supersedes the prior version atomically, and separates classification from test
+status. Failure leaves the prior current assessment untouched. Research is only
+referenced if actually retrieved and never substitutes for the recorded outcome.
+Unit tests may mock PostgreSQL, GLM, and retrieval; migration constraints require a
+PostgreSQL integration test; the configured GLM requires a separately gated live
+integration check.
 
 ### EVAL-18 — Prompt injection
 

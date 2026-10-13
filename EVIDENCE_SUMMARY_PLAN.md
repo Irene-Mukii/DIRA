@@ -1,6 +1,12 @@
 # Evidence Summary and Learner Evidence Card — Implementation Plan
 
-**Status:** Proposed for approval. No implementation changes are made by this plan.
+**Status:** Historical planning document; implementation completed.
+
+> **Historical plan:** This document predates the current Evidence Card and
+> assessment implementation. Its earlier findings about missing schema, retrieval,
+> and MCP capabilities are not current. The current versioned assessment design
+> and implementation map are documented in `ARCHITECTURE.md` and
+> `docs/reference/DATA_MODEL.md`.
 
 ## Objective
 

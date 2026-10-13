@@ -294,7 +294,11 @@ a teacher-recorded linked outcome.
 This read-only tool returns the selected learner's saved tests, linked
 observation citations, external retrieval outcomes, and teacher-recorded outcomes
 within the trusted teacher's currently assigned classes. It does not claim to
-produce an AI verdict or permanent learner classification.
+produce an AI verdict or permanent learner classification. The Evidence Card
+uses the application reasoning service for automatic summary generation and
+explicit hypothesis assessment; neither operation is exposed as a new MCP tool.
+Assessment persistence uses versioned `hypothesis_assessments` rows, separate
+from test lifecycle and observation records.
 
 ## 10. Common error contract
 

@@ -1,7 +1,9 @@
 import { connection } from "next/server";
 import Card from "@/components/ui/Card";
+import EvidenceReasoning from "@/components/evidence/EvidenceReasoning";
 import { resolveTeacherContext } from "@/lib/auth/teacher-context";
 import { buildEvidenceSummary } from "@/lib/services/evidence-summary";
+import { loadCurrentAssessments } from "@/lib/services/evidence-reasoning";
 
 function statusLabel(
   status: "SUGGESTED" | "ACCEPTED" | "COMPLETED",
@@ -76,6 +78,13 @@ export default async function EvidencePage({
     const summary = await buildEvidenceSummary(learnerId, teacher);
     const learner = summary.learner;
     const tests = summary.tests;
+    const currentAssessments = await loadCurrentAssessments(
+      tests.map((test) => test.test_id),
+      teacher,
+    );
+    const assessmentByTestId = new Map(
+      currentAssessments.map((assessment) => [assessment.test_id, assessment]),
+    );
     const supersededTestIds = new Set(
       tests.flatMap((test) => test.supersedes_test_id ? [test.supersedes_test_id] : []),
     );
@@ -92,22 +101,26 @@ export default async function EvidencePage({
           </p>
         </header>
 
+        <EvidenceReasoning
+          learnerId={learnerId}
+          tests={tests.map((test) => ({
+            test_id: test.test_id,
+            hypothesis: test.hypothesis,
+            outcome_observation_id: test.outcome_observation_id,
+            assessment: assessmentByTestId.get(test.test_id) ?? null,
+          }))}
+        />
+
         <Card className="space-y-4 p-6">
           <div>
             <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-              Evidence summary
+              Saved evidence and test outcomes
             </h2>
             <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
-              Saved classroom activities and their linked teacher-recorded outcomes.
-              These records support teacher inquiry; they are not diagnoses or fixed
-              conclusions about the learner.
+              Saved hypotheses, activities, linked teacher-recorded outcomes, and
+              the status of educational-source retrieval. Test status describes its
+              lifecycle; assessments describe evidence in the tested context.
             </p>
-            {tests.length > 0 && (
-              <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                {tests.filter((test) => test.status === "COMPLETED").length} of{" "}
-                {tests.length} saved tests have recorded outcomes.
-              </p>
-            )}
           </div>
           {tests.length === 0 ? (
             <p className="text-sm text-gray-600 dark:text-gray-300">
