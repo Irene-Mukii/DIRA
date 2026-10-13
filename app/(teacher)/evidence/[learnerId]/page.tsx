@@ -1,5 +1,7 @@
 import { connection } from "next/server";
 import Card from "@/components/ui/Card";
+import Button from "@/components/ui/Button";
+import Link from "next/link";
 import { resolveTeacherContext } from "@/lib/auth/teacher-context";
 import { buildEvidenceSummary } from "@/lib/services/evidence-summary";
 
@@ -83,13 +85,22 @@ export default async function EvidencePage({
     return (
       <main className="space-y-6">
         <header>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-            Learner Evidence Card
-          </h1>
-          <p className="text-gray-600 dark:text-gray-300">
-            {learner.display_name} · {learner.grade_level} · Stream{" "}
-            {learner.stream_label} · {learner.academic_year}
-          </p>
+          <div className="flex items-center justify-between gap-4 flex-wrap">
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+                Learner Evidence Card
+              </h1>
+              <p className="text-gray-600 dark:text-gray-300">
+                {learner.display_name} · {learner.grade_level} · Stream{" "}
+                {learner.stream_label} · {learner.academic_year}
+              </p>
+            </div>
+            <Button variant="outline-solid" className="shrink-0">
+              <Link href={`/try-this/${encodeURIComponent(learnerId)}`}>
+                Try This
+              </Link>
+            </Button>
+          </div>
         </header>
 
         <Card className="space-y-4 p-6">
