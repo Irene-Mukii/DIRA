@@ -190,6 +190,18 @@ describe("LangGraph Suggest Test workflow", () => {
     expect(mocks.persistSuggestedProposal).not.toHaveBeenCalled();
   });
 
+  it("propagates a model outage and does not save a fallback proposal", async () => {
+    mocks.createAgentCompletion.mockRejectedValue(
+      new Error("Could not reach the configured GLM service"),
+    );
+
+    await expect(runSuggestTestGraph("L001", context, {
+      submission_id: "SUB-GLM-FAILURE",
+    })).rejects.toThrow("Could not reach the configured GLM service");
+    expect(mocks.createAgentCompletion).toHaveBeenCalledOnce();
+    expect(mocks.persistSuggestedProposal).not.toHaveBeenCalled();
+  });
+
   it("registers exactly thirteen public Dira MCP tools", async () => {
     const server = createDiraMcpServer();
     const client = new Client(
