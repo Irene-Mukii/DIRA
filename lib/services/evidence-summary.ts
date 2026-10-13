@@ -1,4 +1,5 @@
 import "server-only";
+import type { QueryResultRow } from "pg";
 import { pool } from "@/lib/db/client";
 import type { SuggestTestContext } from "@/lib/mcp-tools/suggestTest";
 
@@ -47,6 +48,53 @@ export class EvidenceSummaryNotFoundError extends Error {
   }
 }
 
+type EvidenceQueryStage =
+  | "learner_lookup"
+  | "observations_lookup"
+  | "activity_tests_lookup";
+
+interface DatabaseErrorDetails {
+  code?: unknown;
+  schema?: unknown;
+  table?: unknown;
+  column?: unknown;
+  constraint?: unknown;
+}
+
+function logEvidenceQueryFailure(stage: EvidenceQueryStage, error: unknown): void {
+  const details =
+    typeof error === "object" && error !== null
+      ? (error as DatabaseErrorDetails)
+      : {};
+  const safeName =
+    error instanceof Error ? error.name.slice(0, 80) : "UnknownError";
+  const diagnostic = {
+    stage,
+    errorName: safeName,
+    ...(typeof details.code === "string" ? { databaseCode: details.code } : {}),
+    ...(typeof details.schema === "string" ? { schema: details.schema } : {}),
+    ...(typeof details.table === "string" ? { table: details.table } : {}),
+    ...(typeof details.column === "string" ? { column: details.column } : {}),
+    ...(typeof details.constraint === "string"
+      ? { constraint: details.constraint }
+      : {}),
+  };
+  console.error("Learner evidence summary query failed", diagnostic);
+}
+
+async function runEvidenceQuery<T extends QueryResultRow>(
+  stage: EvidenceQueryStage,
+  query: string,
+  values: unknown[],
+) {
+  try {
+    return await pool.query<T>(query, values);
+  } catch (error) {
+    logEvidenceQueryFailure(stage, error);
+    throw error;
+  }
+}
+
 export async function buildEvidenceSummary(
   learnerIdInput: string,
   context: SuggestTestContext,
@@ -56,13 +104,14 @@ export async function buildEvidenceSummary(
     throw new Error("A learner and trusted teacher/school context are required");
   }
 
-  const learner = await pool.query<{
+  const learner = await runEvidenceQuery<{
     learner_id: string;
     display_name: string;
     grade_level: string;
     stream_label: string;
     academic_year: number;
   }>(
+    "learner_lookup",
     `SELECT l.learner_id, l.display_name, c.grade_level, c.stream_label,
             e.academic_year
      FROM learners l
@@ -95,7 +144,8 @@ export async function buildEvidenceSummary(
     throw new EvidenceSummaryNotFoundError();
   }
 
-  const observations = await pool.query<EvidenceObservation>(
+  const observations = await runEvidenceQuery<EvidenceObservation>(
+    "observations_lookup",
     `SELECT o.observation_id, o.observation_type, o.original_observation,
             o.reviewed_observation, o.observed_at, o.teacher_id,
             o.teacher_review_status, o.subject, o.activity_context
@@ -120,7 +170,8 @@ export async function buildEvidenceSummary(
     [learnerId, context.school_id, context.teacher_id],
   );
 
-  const tests = await pool.query<EvidenceTest>(
+  const tests = await runEvidenceQuery<EvidenceTest>(
+    "activity_tests_lookup",
     `SELECT t.test_id, t.status, t.exploration_question, t.hypothesis,
             t.suggested_activity, t.activity_date::text AS activity_date,
             t.purpose, t.estimated_minutes, t.what_to_observe,
