@@ -473,7 +473,7 @@ def main() -> None:
     parser.add_argument("--academic-year", type=int, default=2026)
     parser.add_argument("--streams-per-grade", type=int, default=2)
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--output-dir", type=Path, default=Path("data/generated_dev"))
+    parser.add_argument("--output-dir", type=Path, default=Path("data/generated_day2"))
     parser.add_argument("--include-teacher-reviews", action="store_true")
     args = parser.parse_args()
     if args.learners < 1 or not 1 <= args.streams_per_grade <= 26:
