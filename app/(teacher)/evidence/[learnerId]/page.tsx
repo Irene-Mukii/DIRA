@@ -4,10 +4,15 @@ import SuggestionWorkflow from "@/components/evidence/SuggestionWorkflow";
 import { resolveTeacherContext } from "@/lib/auth/teacher-context";
 import { buildEvidenceSummary } from "@/lib/services/evidence-summary";
 
-function statusLabel(status: "SUGGESTED" | "ACCEPTED" | "COMPLETED"): string {
+function statusLabel(
+  status: "SUGGESTED" | "ACCEPTED" | "COMPLETED",
+  wasSuperseded: boolean,
+): string {
   switch (status) {
     case "SUGGESTED":
-      return "Rejected · regeneration requested";
+      return wasSuperseded
+        ? "Rejected · replacement suggested"
+        : "Suggested · awaiting teacher decision";
     case "ACCEPTED":
       return "Accepted · outcome not yet recorded";
     case "COMPLETED":
@@ -72,6 +77,9 @@ export default async function EvidencePage({
     const summary = await buildEvidenceSummary(learnerId, teacher);
     const learner = summary.learner;
     const tests = summary.tests;
+    const supersededTestIds = new Set(
+      tests.flatMap((test) => test.supersedes_test_id ? [test.supersedes_test_id] : []),
+    );
 
     return (
       <main className="space-y-6">
@@ -128,8 +136,7 @@ export default async function EvidencePage({
           </h2>
           {tests.length === 0 ? (
             <p className="text-sm text-gray-600 dark:text-gray-300">
-              No test suggestions have been saved for this learner. New proposals
-              remain transient until accepted or rejected for regeneration.
+              No test suggestions have been saved for this learner.
             </p>
           ) : (
             <div className="space-y-5">
@@ -143,7 +150,10 @@ export default async function EvidencePage({
                       {test.exploration_question ?? test.suggested_activity}
                     </h3>
                     <span className="rounded bg-gray-100 px-2 py-1 text-xs dark:bg-gray-700">
-                      {statusLabel(test.status)}
+                      {statusLabel(
+                        test.status,
+                        supersededTestIds.has(test.test_id),
+                      )}
                     </span>
                   </div>
                   <p className="whitespace-pre-wrap text-sm text-gray-700 dark:text-gray-200">
