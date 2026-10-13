@@ -2,7 +2,9 @@ import Link from "next/link";
 import { connection } from "next/server";
 import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
+import ApprovedTests from "@/components/learners/ApprovedTests";
 import ObservationReviewControls from "@/components/observations/ObservationReviewControls";
+import SuggestionWorkflow from "@/components/evidence/SuggestionWorkflow";
 import { pool } from "@/lib/db/client";
 import { resolveTeacherContext } from "@/lib/auth/teacher-context";
 
@@ -31,6 +33,16 @@ interface ObservationRow {
 interface SuggestedTest {
   test_id: string;
   suggested_activity: string;
+}
+
+interface ApprovedTest {
+  test_id: string;
+  exploration_question: string | null;
+  hypothesis: string | null;
+  suggested_activity: string;
+  activity_date: Date;
+  purpose: string | null;
+  what_to_observe: string[];
 }
 
 function formatDate(value: Date | string | null): string {
@@ -153,9 +165,20 @@ export default async function LearnerDetailPage({
        ORDER BY activity_date DESC`,
       [learnerId],
     );
+    const approvedTestsResult = await pool.query<ApprovedTest>(
+      `SELECT t.test_id, t.exploration_question, t.hypothesis,
+              t.suggested_activity, t.activity_date, t.purpose,
+              t.what_to_observe
+       FROM activity_tests t
+       WHERE t.learner_id = $1
+         AND t.status = 'ACCEPTED'
+         AND t.outcome_observation_id IS NULL
+       ORDER BY t.activity_date DESC, t.test_id`,
+      [learnerId],
+    );
 
     return (
-      <div className="space-y-6">
+      <div className="min-h-full space-y-4 bg-gray-50 px-3 py-3 dark:bg-[#0b1422] md:px-4 md:py-4">
         <div className="flex items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
@@ -179,35 +202,54 @@ export default async function LearnerDetailPage({
           </div>
         </div>
 
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-          <Card className="p-4">
+        <div className="grid gap-3 md:grid-cols-3">
+          <Card className="border-gray-200 p-4 dark:border-[#26364b] dark:bg-[#111e30]">
             <h2 className="text-sm font-medium text-gray-500 dark:text-gray-400">Total Observations</h2>
             <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{learner.observation_count}</p>
           </Card>
-          <Card className="p-4">
+          <Card className="border-gray-200 p-4 dark:border-[#26364b] dark:bg-[#111e30]">
             <h2 className="text-sm font-medium text-gray-500 dark:text-gray-400">Last Observed</h2>
             <p className="text-lg font-bold text-gray-900 dark:text-gray-100">
               {formatDate(learner.last_observed_at)}
             </p>
           </Card>
-          <Card className="p-4">
+          <Card className="border-gray-200 p-4 dark:border-[#26364b] dark:bg-[#111e30]">
             <h2 className="text-sm font-medium text-gray-500 dark:text-gray-400">Tests Suggested</h2>
             <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{learner.tests_suggested}</p>
           </Card>
         </div>
 
-        <Card className="p-6">
-          <h2 className="mb-4 text-lg font-semibold text-gray-900 dark:text-gray-100">
-            Recent Observations
-          </h2>
+        <SuggestionWorkflow learnerId={learner.learner_id} />
+
+        <ApprovedTests
+          learnerId={learner.learner_id}
+          tests={approvedTestsResult.rows}
+        />
+
+        <Card className="border-gray-200 p-5 dark:border-[#26364b] dark:bg-[#111e30]">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                Recent Observations
+              </h2>
+              <p className="text-sm text-gray-600 dark:text-gray-300">
+                All observations, including completed test outcomes, appear here.
+              </p>
+            </div>
+            <Button size="sm">
+              <Link href={`/learners/${encodeURIComponent(learner.learner_id)}/log-observation`}>
+                Log new observation
+              </Link>
+            </Button>
+          </div>
           {observationsResult.rows.length === 0 ? (
             <p className="text-sm text-gray-500 dark:text-gray-400">No observations have been recorded.</p>
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-1">
               {observationsResult.rows.map((observation) => (
                 <div
                   key={observation.observation_id}
-                  className="flex items-start justify-between gap-4 border-b border-gray-200 pb-3 dark:border-gray-700"
+                  className="flex items-start justify-between gap-4 border-b border-gray-200 py-3 last:border-0 dark:border-gray-700"
                 >
                   <div>
                     <p className="text-sm text-gray-900 dark:text-gray-100">
@@ -215,6 +257,7 @@ export default async function LearnerDetailPage({
                     </p>
                     <p className="mt-1 text-xs capitalize text-gray-500 dark:text-gray-400">
                       {formatDate(observation.observed_at)} · {observation.observation_type}
+                      {observation.linked_test_id && ` · ${observation.linked_test_id}`}
                     </p>
                   </div>
                   <ObservationReviewControls
