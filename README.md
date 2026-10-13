@@ -43,38 +43,18 @@ observations for L003 in the latest school year, on separate T001 class dates.
 They provide a repeatable example for trying the suggested-test workflow at
 `/evidence/L003`; they are synthetic demo records, not real learner evidence.
 
-### Run the Suggest Test browser end-to-end demo
-
-Install the Chromium browser once, then run:
-
-```powershell
-npx playwright install chromium
-```
-
-In one terminal, start the app:
+### Try Suggest Test in the browser
 
 ```powershell
 npm run dev
 ```
 
-In another terminal, run the browser test:
-
-```powershell
-npm run test:e2e:suggest-test
-```
-
-The browser test uses the local Next.js server at `http://localhost:3000`,
-opens the
-synthetic learner L003's Evidence Card, requests a GLM-generated proposal,
-rejects it for regeneration, checks the linked proposals after reload, and
-removes only the rows created by that test. It refuses to run unless the
-database URL points to the local `dira_dev` database on port `5433` as
-`dira_dev`. The failure-state test stubs the browser's API response to check
-safe UI handling; it does not simulate a live provider outage. The graph's
-separate unit test verifies that a GLM outage propagates without saving a
-fallback. Watch the Next.js server output during the demo to inspect the
-correlated LangGraph stage and MCP-tool logs. Live GLM and educational-source
-availability still depend on the local credentials and network.
+Open `http://localhost:3000/evidence/L003` to try the workflow with the
+synthetic learner. Click **Suggest Test**, then review the generated activity
+and retrieved educational references. The API calls the configured GLM and
+persists each proposal; rejecting one requests a linked replacement. Watch the
+Next.js server output for LangGraph stage and MCP-tool logs. GLM and external
+education-source availability depend on the configured credentials and network.
 
 The importer requires `--confirm-development` (included in the npm script) and
 rejects non-loopback databases, non-development usernames, and databases other
