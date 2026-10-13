@@ -13,7 +13,19 @@ export interface EducationSource {
   title: string | null;
   page_url: string | null;
   excerpt: string | null;
-  error: "timeout" | "provider_error" | null;
+  error:
+    | "timeout"
+    | "access_restricted"
+    | "http_error"
+    | "network_error"
+    | "discovery_failure"
+    | "content_extraction_failure"
+    | "response_too_large"
+    | "unsupported_content"
+    | "provider_error"
+    | null;
+  http_status: number | null;
+  retrieval_duration_ms: number | null;
 }
 
 export interface EducationSourceDefinition {
@@ -23,16 +35,60 @@ export interface EducationSourceDefinition {
   domain: string;
 }
 
+export const EDUCATION_SOURCES: readonly EducationSourceDefinition[] = [
+  {
+    key: "IB",
+    name: "International Baccalaureate",
+    url: "https://www.ibo.org/",
+    domain: "ibo.org",
+  },
+  {
+    key: "EEF",
+    name: "Education Endowment Foundation",
+    url: "https://educationendowmentfoundation.org.uk/",
+    domain: "educationendowmentfoundation.org.uk",
+  },
+  {
+    key: "AMI",
+    name: "Association Montessori Internationale",
+    url: "https://montessori-ami.org/",
+    domain: "montessori-ami.org",
+  },
+  {
+    key: "WWC",
+    name: "What Works Clearinghouse",
+    url: "https://ies.ed.gov/ncee/wwc/",
+    domain: "ies.ed.gov",
+  },
+];
+
 const MAX_SITEMAP_BYTES = 256_000;
 const MAX_PAGE_BYTES = 128_000;
 const MAX_PAGES_PER_SOURCE = 3;
 const REQUEST_TIMEOUT_MS = 3_500;
-const SAFE_DOMAIN_SUFFIXES = [
-  "ibo.org",
-  "educationendowmentfoundation.org.uk",
-  "montessori-ami.org",
-  "ies.ed.gov",
-];
+class EducationRetrievalError extends Error {
+  constructor(
+    public readonly code: NonNullable<EducationSource["error"]>,
+    public readonly httpStatus: number | null = null,
+  ) {
+    super(code);
+    this.name = "EducationRetrievalError";
+  }
+}
+
+interface RetrievedText {
+  content: string;
+  httpStatus: number;
+}
+
+function sanitizedUrl(value: string): string {
+  try {
+    const url = new URL(value);
+    return `${url.origin}${url.pathname}`;
+  } catch {
+    return "invalid_url";
+  }
+}
 
 function isAllowedUrl(value: string, allowedDomain: string): URL | null {
   try {
@@ -90,14 +146,63 @@ async function fetchOfficialText(
   allowedDomain: string,
   maximumBytes: number,
   signal: AbortSignal,
-): Promise<string | null> {
-  const response = await fetch(url, {
-    headers: { accept: "text/html, application/xml, text/xml" },
-    signal,
-    redirect: "follow",
-  });
-  if (!response.ok || !isAllowedUrl(response.url, allowedDomain)) return null;
-  return readBoundedResponse(response, maximumBytes);
+): Promise<RetrievedText | null> {
+  const startedAt = Date.now();
+  try {
+    const response = await fetch(url, {
+      headers: { accept: "text/html, application/xml, text/xml" },
+      signal,
+      redirect: "follow",
+    });
+    if (!response.ok) {
+      const code = response.status === 401 || response.status === 403
+        ? "access_restricted"
+        : "http_error";
+      console.warn("Education source request failed", {
+        source_domain: allowedDomain,
+        target_url: sanitizedUrl(url.href),
+        http_status: response.status,
+        duration_ms: Date.now() - startedAt,
+        error: code,
+      });
+      throw new EducationRetrievalError(code, response.status);
+    }
+    if (!isAllowedUrl(response.url, allowedDomain)) {
+      throw new EducationRetrievalError("access_restricted", response.status);
+    }
+    const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+    if (
+      contentType &&
+      !/(?:text\/html|application\/(?:xml|xhtml\+xml)|text\/xml|text\/plain)/.test(contentType)
+    ) {
+      throw new EducationRetrievalError("unsupported_content", response.status);
+    }
+    const text = await readBoundedResponse(response, maximumBytes);
+    console.info("Education source request completed", {
+      source_domain: allowedDomain,
+      target_url: sanitizedUrl(url.href),
+      http_status: response.status,
+      duration_ms: Date.now() - startedAt,
+    });
+    return { content: text, httpStatus: response.status };
+  } catch (error) {
+    if (error instanceof EducationRetrievalError) throw error;
+    const timeout =
+      error instanceof Error &&
+      (error.name === "TimeoutError" || error.name === "AbortError");
+    const code = timeout
+      ? "timeout"
+      : error instanceof Error && error.message === "response_too_large"
+        ? "response_too_large"
+        : "network_error";
+    console.warn("Education source request failed", {
+      source_domain: allowedDomain,
+      target_url: sanitizedUrl(url.href),
+      duration_ms: Date.now() - startedAt,
+      error: code,
+    });
+    throw new EducationRetrievalError(code);
+  }
 }
 
 function sitemapLocations(xml: string, allowedDomain: string): URL[] {
@@ -150,63 +255,140 @@ function relevantExcerpt(text: string, queryTerms: string[]): string {
   return (best || text).slice(0, 600);
 }
 
+function noRelevantResult(
+  source: EducationSourceDefinition,
+  startedAt: number,
+  httpStatus: number | null,
+): EducationSource {
+  const result: EducationSource = {
+    key: source.key,
+    name: source.name,
+    url: source.url,
+    status: "no_relevant_results",
+    retrieved_at: new Date().toISOString(),
+    title: null,
+    page_url: null,
+    excerpt: null,
+    error: null,
+    http_status: httpStatus,
+    retrieval_duration_ms: Date.now() - startedAt,
+  };
+  console.info("Education source retrieval complete", {
+    source: source.key,
+    target_url: sanitizedUrl(source.url),
+    status: result.status,
+    http_status: result.http_status,
+    duration_ms: result.retrieval_duration_ms,
+  });
+  return result;
+}
+
 async function retrieveFromSource(
   source: EducationSourceDefinition,
   queryTerms: string[],
 ): Promise<EducationSource> {
-  const failed = (error: EducationSource["error"]): EducationSource => ({
-    key: source.key,
-    name: source.name,
-    url: source.url,
-    status: "failed",
-    retrieved_at: null,
-    title: null,
-    page_url: null,
-    excerpt: null,
-    error,
-  });
+  const startedAt = Date.now();
+  const failed = (
+    error: NonNullable<EducationSource["error"]>,
+    httpStatus: number | null = null,
+  ): EducationSource => {
+    const result: EducationSource = {
+      key: source.key,
+      name: source.name,
+      url: source.url,
+      status: "failed",
+      retrieved_at: new Date().toISOString(),
+      title: null,
+      page_url: null,
+      excerpt: null,
+      error,
+      http_status: httpStatus,
+      retrieval_duration_ms: Date.now() - startedAt,
+    };
+    console.warn("Education source retrieval failed", {
+      source: source.key,
+      target_url: sanitizedUrl(source.url),
+      http_status: httpStatus,
+      duration_ms: result.retrieval_duration_ms,
+      error,
+    });
+    return result;
+  };
   try {
     const signal = AbortSignal.timeout(REQUEST_TIMEOUT_MS * 2);
     const root = new URL(source.url);
-    let sitemap = await fetchOfficialText(
-      new URL("/sitemap.xml", root),
-      source.domain,
-      MAX_SITEMAP_BYTES,
-      signal,
-    );
-    if (!sitemap) {
-      const robots = await fetchOfficialText(
-        new URL("/robots.txt", root),
+    let sitemap: RetrievedText | null = null;
+    let discoveryError: EducationRetrievalError | null = null;
+    try {
+      sitemap = await fetchOfficialText(
+        new URL("/sitemap.xml", root),
         source.domain,
-        32_000,
+        MAX_SITEMAP_BYTES,
         signal,
       );
-      const location = robots?.match(/^sitemap:\s*(\S+)/im)?.[1];
-      const sitemapUrl = location ? isAllowedUrl(location, source.domain) : null;
-      if (sitemapUrl) {
-        sitemap = await fetchOfficialText(
-          sitemapUrl,
+    } catch (error) {
+      if (!(error instanceof EducationRetrievalError)) throw error;
+      discoveryError = error;
+    }
+    if (!sitemap) {
+      let robots: RetrievedText | null = null;
+      try {
+        robots = await fetchOfficialText(
+          new URL("/robots.txt", root),
           source.domain,
-          MAX_SITEMAP_BYTES,
+          32_000,
           signal,
         );
+      } catch (error) {
+        if (!(error instanceof EducationRetrievalError)) throw error;
+        discoveryError = error;
+      }
+      const location = robots?.content.match(/^sitemap:\s*(\S+)/im)?.[1];
+      const sitemapUrl = location ? isAllowedUrl(location, source.domain) : null;
+      if (sitemapUrl) {
+        try {
+          sitemap = await fetchOfficialText(
+            sitemapUrl,
+            source.domain,
+            MAX_SITEMAP_BYTES,
+            signal,
+          );
+        } catch (error) {
+          if (!(error instanceof EducationRetrievalError)) throw error;
+          discoveryError = error;
+        }
       }
     }
-    if (!sitemap) return failed("provider_error");
+    if (!sitemap) {
+      return failed(
+        discoveryError?.code ?? "discovery_failure",
+        discoveryError?.httpStatus ?? null,
+      );
+    }
 
-    const locations = sitemapLocations(sitemap, source.domain);
+    const locations = sitemapLocations(sitemap.content, source.domain);
+    if (locations.length === 0) {
+      return noRelevantResult(source, startedAt, sitemap.httpStatus);
+    }
     const childSitemaps = locations
       .filter((url) => /\.xml(?:$|\?)/i.test(url.href))
       .slice(0, 2);
     const pages = locations.filter((url) => !/\.xml(?:$|\?)/i.test(url.href));
     for (const child of childSitemaps) {
-      const childContent = await fetchOfficialText(
-        child,
-        source.domain,
-        MAX_SITEMAP_BYTES,
-        signal,
-      );
-      if (childContent) pages.push(...sitemapLocations(childContent, source.domain));
+      let childContent: RetrievedText | null = null;
+      try {
+        childContent = await fetchOfficialText(
+          child,
+          source.domain,
+          MAX_SITEMAP_BYTES,
+          signal,
+        );
+      } catch (error) {
+        if (!(error instanceof EducationRetrievalError)) throw error;
+      }
+      if (childContent) {
+        pages.push(...sitemapLocations(childContent.content, source.domain));
+      }
     }
     const candidates = [...new Map(
       pages
@@ -216,35 +398,50 @@ async function retrieveFromSource(
           relevanceScore(left[0], queryTerms)
         )),
     ).values()].slice(0, MAX_PAGES_PER_SOURCE);
-    let best: { url: URL; title: string | null; text: string; score: number } | null = null;
+    let best: {
+      url: URL;
+      title: string | null;
+      text: string;
+      score: number;
+      httpStatus: number;
+    } | null = null;
+    let fetchedPages = 0;
+    let lastError: EducationRetrievalError | null = null;
     for (const pageUrl of candidates) {
-      const html = await fetchOfficialText(
-        pageUrl,
-        source.domain,
-        MAX_PAGE_BYTES,
-        signal,
-      );
-      if (!html) continue;
-      const content = plainText(html);
-      const score = relevanceScore(`${content.title ?? ""} ${content.text}`, queryTerms);
-      if (!best || score > best.score) {
-        best = { url: pageUrl, ...content, score };
+      try {
+        const page = await fetchOfficialText(
+          pageUrl,
+          source.domain,
+          MAX_PAGE_BYTES,
+          signal,
+        );
+        if (!page) continue;
+        const content = plainText(page.content);
+        if (!content.text) continue;
+        fetchedPages += 1;
+        const score = relevanceScore(`${content.title ?? ""} ${content.text}`, queryTerms);
+        if (!best || score > best.score) {
+          best = { url: pageUrl, ...content, score, httpStatus: page.httpStatus };
+        }
+      } catch (error) {
+        if (error instanceof EducationRetrievalError) lastError = error;
+        continue;
       }
     }
-    if (!best || best.score < 1) {
-      return {
-        key: source.key,
-        name: source.name,
-        url: source.url,
-        status: "no_relevant_results",
-        retrieved_at: new Date().toISOString(),
-        title: null,
-        page_url: null,
-        excerpt: null,
-        error: null,
-      };
+    if (fetchedPages === 0 && lastError) {
+      return failed(lastError.code, lastError.httpStatus);
     }
-    return {
+    if (candidates.length === 0 || fetchedPages === 0) {
+      return failed("content_extraction_failure");
+    }
+    if (!best || best.score < 1) {
+      return noRelevantResult(
+        source,
+        startedAt,
+        best?.httpStatus ?? sitemap.httpStatus,
+      );
+    }
+    const result: EducationSource = {
       key: source.key,
       name: source.name,
       url: source.url,
@@ -254,23 +451,38 @@ async function retrieveFromSource(
       page_url: best.url.href,
       excerpt: relevantExcerpt(best.text, queryTerms),
       error: null,
+      http_status: best.httpStatus,
+      retrieval_duration_ms: Date.now() - startedAt,
     };
+    console.info("Education source retrieval complete", {
+      source: source.key,
+      target_url: sanitizedUrl(best.url.href),
+      status: result.status,
+      http_status: result.http_status,
+      duration_ms: result.retrieval_duration_ms,
+    });
+    return result;
   } catch (error) {
-    return failed(
-      error instanceof Error &&
-      (error.name === "TimeoutError" || error.name === "AbortError")
-        ? "timeout"
-        : "provider_error",
-    );
+    const result = error instanceof EducationRetrievalError
+      ? failed(error.code, error.httpStatus)
+      : failed(
+          error instanceof Error &&
+            (error.name === "TimeoutError" || error.name === "AbortError")
+            ? "timeout"
+            : "provider_error",
+        );
+    return result;
   }
 }
 
 export async function retrieveEducationEvidence(
-  observationType: string,
+  query: string,
   sources: readonly EducationSourceDefinition[],
 ): Promise<{ status: EducationRetrievalStatus; sources: EducationSource[] }> {
-  const normalizedType = observationType.replaceAll("_", " ").toLowerCase();
-  const queryTerms = normalizedType.split(/\s+/).filter((term) => term.length > 2);
+  const normalizedQuery = query.replaceAll("_", " ").toLowerCase();
+  const queryTerms = [...new Set(
+    normalizedQuery.split(/\s+/).filter((term) => term.length > 2),
+  )].slice(0, 24);
 
   const results = await Promise.all(
     sources.map((source) => retrieveFromSource(source, queryTerms)),

@@ -72,8 +72,6 @@ export default async function LearnerDetailPage({
         </Card>
       );
     }
-    const schoolId = context.school_id;
-
     const profileResult = await pool.query<LearnerProfile>(
       `SELECT
          l.learner_id,
@@ -107,10 +105,24 @@ export default async function LearnerDetailPage({
          ON c.class_id = e.class_id
         AND c.school_id = e.school_id
         AND c.academic_year = e.academic_year
-       WHERE l.learner_id = $1 AND e.school_id = $2
+       WHERE l.learner_id = $1
+         AND e.school_id = $2
+         AND e.enrolment_status <> 'Withdrawn'
+         AND e.enrolled_from <= CURRENT_DATE
+         AND (e.enrolled_to IS NULL OR e.enrolled_to >= CURRENT_DATE)
+         AND EXISTS (
+           SELECT 1
+           FROM timetable_assignments ta
+           WHERE ta.class_id = e.class_id
+             AND ta.school_id = e.school_id
+             AND ta.academic_year = e.academic_year
+             AND ta.teacher_id = $3
+             AND ta.valid_from <= CURRENT_DATE
+             AND (ta.valid_to IS NULL OR ta.valid_to >= CURRENT_DATE)
+         )
        ORDER BY e.academic_year DESC
        LIMIT 1`,
-      [learnerId, schoolId],
+      [learnerId, context.school_id, context.teacher_id],
     );
     const learner = profileResult.rows[0];
 
@@ -119,7 +131,7 @@ export default async function LearnerDetailPage({
         <Card className="p-6">
           <h1 className="text-xl font-semibold">Learner not found</h1>
           <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
-            This learner is not enrolled in the configured development school.
+            This learner is not currently assigned to the configured development teacher.
           </p>
         </Card>
       );

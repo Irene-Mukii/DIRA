@@ -44,6 +44,8 @@ describe("education source retrieval", () => {
     expect(result.sources).toHaveLength(4);
     expect(result.sources.every((source) => source.status === "success")).toBe(true);
     expect(result.sources.every((source) => source.page_url?.includes("/resources/participation"))).toBe(true);
+    expect(result.sources.every((source) => source.http_status === 200)).toBe(true);
+    expect(result.sources.every((source) => source.retrieval_duration_ms >= 0)).toBe(true);
     expect(result.sources[0].excerpt).toMatch(/participation/i);
   });
 
@@ -65,5 +67,41 @@ describe("education source retrieval", () => {
     expect(result.status).toBe("no_relevant_results");
     expect(fetchMock).toHaveBeenCalledTimes(4);
     expect(result.sources.every((source) => source.page_url === null)).toBe(true);
+  });
+
+  it("continues retrieving from other sources when one source denies access", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (input) => {
+      const url = new URL(String(input));
+      if (url.hostname === "www.ibo.org" && url.pathname === "/sitemap.xml") {
+        return response(url.href, "blocked", 403);
+      }
+      if (url.pathname === "/sitemap.xml") {
+        return response(
+          url.href,
+          `<urlset><url><loc>https://${url.hostname}/resources/participation</loc></url></urlset>`,
+        );
+      }
+      if (url.hostname === "www.ibo.org" && url.pathname === "/robots.txt") {
+        return response(url.href, "User-agent: *");
+      }
+      return response(
+        url.href,
+        "<html><head><title>Participation</title></head><body>Classroom participation benefits from structured discussion.</body></html>",
+      );
+    }));
+    const { retrieveEducationEvidence } = await import(
+      "../lib/services/education-retrieval.ts"
+    );
+
+    const result = await retrieveEducationEvidence("participation", sources);
+
+    expect(result.status).toBe("partial");
+    expect(result.sources.find((source) => source.key === "IB")).toMatchObject({
+      status: "failed",
+      error: "access_restricted",
+      http_status: 403,
+    });
+    expect(result.sources.filter((source) => source.status === "success"))
+      .toHaveLength(3);
   });
 });
