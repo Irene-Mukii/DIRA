@@ -16,6 +16,14 @@ interface ObservationReviewControlsProps {
   tests: Array<{ test_id: string; suggested_activity: string }>;
 }
 
+interface ReviewResponse {
+  error?: string;
+  observation?: {
+    observation_id: string;
+    teacher_review_status: "not_required" | "recorded" | "confirmed" | "updated";
+  };
+}
+
 export default function ObservationReviewControls({
   observation,
   tests,
@@ -50,8 +58,16 @@ export default function ObservationReviewControls({
           }),
         },
       );
-      const payload = await response.json() as { error?: string };
-      if (!response.ok) throw new Error(payload.error || "Could not save your review.");
+      const payload = await response.json() as ReviewResponse;
+      if (!response.ok) {
+        throw new Error(payload.error || "Could not save your review.");
+      }
+      if (
+        payload.observation?.observation_id !== observation.observation_id ||
+        payload.observation.teacher_review_status !== reviewStatus
+      ) {
+        throw new Error("The server did not confirm the requested review status.");
+      }
       submissionId.current = null;
       setEditing(false);
       router.refresh();
@@ -63,11 +79,13 @@ export default function ObservationReviewControls({
   };
 
   if (observation.teacher_review_status !== "recorded") {
+    const statusLabel = observation.teacher_review_status === "not_required"
+      ? "Saved"
+      : observation.teacher_review_status[0].toUpperCase() +
+        observation.teacher_review_status.slice(1);
     return (
       <span className="shrink-0 rounded-full bg-gray-100 px-2 py-1 text-xs capitalize text-gray-600 dark:bg-gray-700 dark:text-gray-200">
-        {observation.teacher_review_status === "not_required"
-          ? "Saved"
-          : observation.teacher_review_status}
+        {statusLabel}
       </span>
     );
   }
