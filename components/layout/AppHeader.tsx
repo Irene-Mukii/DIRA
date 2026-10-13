@@ -7,8 +7,8 @@ export default function AppHeader() {
       <div className="flex flex-1 items-center justify-between">
         <div className="flex items-center gap-x-4">
           <Link href="/" className="flex items-center gap-x-2">
-            <Image src="/images/logo.png" alt="DIRA" width={32} height={32} />
-            <span className="text-lg font-semibold text-gray-900 dark:text-gray-100">DIRA</span>
+            <Image src="/images/logo.png" alt="DIRA" width={44} height={44} />
+            <span className="text-xl font-semibold text-gray-900 dark:text-gray-100">DIRA</span>
           </Link>
         </div>
         <div className="flex items-center gap-x-4">

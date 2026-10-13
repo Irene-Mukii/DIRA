@@ -133,7 +133,7 @@ export async function createAgentCompletion(
           temperature: 0.2,
           stream: false,
         }),
-        signal: AbortSignal.timeout(25_000),
+        signal: AbortSignal.timeout(75_000),
       },
     );
   } catch {
