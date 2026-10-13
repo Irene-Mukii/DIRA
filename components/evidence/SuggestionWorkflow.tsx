@@ -138,7 +138,7 @@ export default function SuggestionWorkflow({
           type="button"
           disabled={busy}
           onClick={() => void request("suggest")}
-          className="rounded-md bg-blue-700 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+          className="cursor-pointer rounded-md bg-blue-700 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-800 active:bg-blue-900 disabled:cursor-not-allowed disabled:opacity-60"
         >
           {busy ? "Preparing suggestion…" : "Suggest Test"}
         </button>
@@ -151,7 +151,7 @@ export default function SuggestionWorkflow({
             type="button"
             disabled={busy}
             onClick={() => void request("suggest")}
-            className="rounded-md border border-gray-400 px-3 py-2 disabled:opacity-60"
+            className="cursor-pointer rounded-md border border-gray-400 px-3 py-2 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60 dark:hover:bg-gray-700"
           >
             Check again
           </button>
@@ -257,7 +257,7 @@ export default function SuggestionWorkflow({
               type="button"
               disabled={busy}
               onClick={() => void request("accept")}
-              className="rounded-md bg-blue-700 px-3 py-2 text-sm font-medium text-white disabled:opacity-60"
+              className="cursor-pointer rounded-md bg-blue-700 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-800 active:bg-blue-900 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {busy ? "Saving…" : "Accept test"}
             </button>
@@ -265,7 +265,7 @@ export default function SuggestionWorkflow({
               type="button"
               disabled={busy}
               onClick={() => void request("regenerate")}
-              className="rounded-md border border-gray-400 px-3 py-2 text-sm disabled:opacity-60"
+              className="cursor-pointer rounded-md border border-gray-400 px-3 py-2 text-sm hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60 dark:hover:bg-gray-700"
             >
               {busy ? "Preparing…" : "Reject and suggest another"}
             </button>
