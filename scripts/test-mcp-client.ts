@@ -18,37 +18,89 @@ const transport = new StdioClientTransport({
     ...process.env,
     NODE_ENV: "development",
   },
-
 });
 
 async function main() {
+  // Import after dotenv configuration so DATABASE_URL is available.
+  const { pool } = await import("../lib/db/client");
+
   try {
-    // Establish the MCP connection and initialize handshake.
+    // Match the trusted teacher context selected by the MCP server.
+    const contextResult = await pool.query<{
+      teacher_id: string;
+      school_id: string;
+    }>(
+      `SELECT teacher_id, school_id
+       FROM teachers
+       ORDER BY created_at ASC, teacher_id ASC, school_id ASC
+       LIMIT 1`,
+    );
+    const context = contextResult.rows[0];
+    if (!context) {
+      throw new Error("No trusted teacher context is available for the MCP test");
+    }
+
+    // Pick a currently accepted linked test that this teacher can validly observe.
+    // The observation consumes the test by changing its status to COMPLETED.
+    const candidateResult = await pool.query<{
+      test_id: string;
+      learner_id: string;
+    }>(
+      `SELECT DISTINCT t.test_id, t.learner_id
+       FROM activity_tests t
+       JOIN learner_enrollments e
+         ON e.learner_id = t.learner_id
+        AND e.school_id = $2
+       JOIN classes c
+         ON c.class_id = e.class_id
+        AND c.school_id = e.school_id
+        AND c.academic_year = e.academic_year
+       JOIN timetable_assignments ta
+         ON ta.class_id = e.class_id
+        AND ta.school_id = e.school_id
+        AND ta.academic_year = e.academic_year
+       WHERE t.status = 'ACCEPTED'
+         AND ta.teacher_id = $1
+         AND ta.valid_from <= CURRENT_DATE
+         AND (ta.valid_to IS NULL OR ta.valid_to >= CURRENT_DATE)
+         AND e.enrolment_status <> 'Withdrawn'
+         AND e.enrolled_from <= CURRENT_DATE
+         AND (e.enrolled_to IS NULL OR e.enrolled_to >= CURRENT_DATE)
+       ORDER BY t.test_id
+       LIMIT 1`,
+      [context.teacher_id, context.school_id],
+    );
+    const candidate = candidateResult.rows[0];
+    if (!candidate) {
+      throw new Error(
+        `No currently accepted linked test is available for teacher ${context.teacher_id}. ` +
+          "Seed or select a fresh accepted test before running the MCP end-to-end test.",
+      );
+    }
+
+    console.log(
+      `Using eligible test ${candidate.test_id} for learner ${candidate.learner_id}.`,
+    );
+
     await client.connect(transport);
     console.log("Connected to Dira MCP server.");
 
-    // Discover the server's registered tools.
     const { tools } = await client.listTools();
-
-    console.log(
-      "Available tools:",
-      tools.map((tool) => tool.name),
-    );
+    console.log("Available tools:", tools.map((tool) => tool.name));
 
     if (!tools.some((tool) => tool.name === "log_observation")) {
       throw new Error("log_observation was not registered");
     }
 
-    // Invoke the tool through the MCP protocol.
     const result = await client.callTool({
       name: "log_observation",
       arguments: {
-        learner_id: "L009",
-        linked_test_id: "TEST000011",
+        learner_id: candidate.learner_id,
+        linked_test_id: candidate.test_id,
         observation_type: "participation",
         observed_at: new Date().toISOString(),
         content:
-          "During group work, the learner explained their solution to two classmates.",
+          "MCP end-to-end test: learner explained their solution during group work.",
         subject: "Mathematics",
         term: "Term 3",
         capture_method: "text",
@@ -66,6 +118,7 @@ async function main() {
     console.log("MCP end-to-end test passed.");
   } finally {
     await client.close();
+    await pool.end();
   }
 }
 

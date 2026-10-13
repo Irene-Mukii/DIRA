@@ -8,6 +8,7 @@ const navigation = [
   { name: "Try This", href: "/try-this/demo", current: false },
   { name: "Evidence", href: "/evidence/demo", current: false },
   { name: "Log Observation", href: "/observation-log", current: false },
+  { name: "Agent Logs", href: "/agent-logs", current: false },
 ];
 
 export default function DesktopSidebar() {
