@@ -17,6 +17,7 @@ interface EvidenceObservation {
 
 interface EvidenceTest {
   test_id: string;
+  supersedes_test_id: string | null;
   status: "SUGGESTED" | "ACCEPTED" | "COMPLETED";
   exploration_question: string | null;
   hypothesis: string | null;
@@ -172,7 +173,8 @@ export async function buildEvidenceSummary(
 
   const tests = await runEvidenceQuery<EvidenceTest>(
     "activity_tests_lookup",
-    `SELECT t.test_id, t.status, t.exploration_question, t.hypothesis,
+    `SELECT t.test_id, t.supersedes_test_id, t.status,
+            t.exploration_question, t.hypothesis,
             t.suggested_activity, t.activity_date::text AS activity_date,
             t.purpose, t.estimated_minutes, t.what_to_observe,
             t.what_to_log_after, t.limitations, t.retrieval_status,
