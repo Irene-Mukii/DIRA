@@ -1,6 +1,5 @@
 import { connection } from "next/server";
 import Card from "@/components/ui/Card";
-import SuggestionWorkflow from "@/components/evidence/SuggestionWorkflow";
 import { resolveTeacherContext } from "@/lib/auth/teacher-context";
 import { buildEvidenceSummary } from "@/lib/services/evidence-summary";
 
@@ -93,50 +92,26 @@ export default async function EvidencePage({
           </p>
         </header>
 
-        <SuggestionWorkflow learnerId={learner.learner_id} />
-
         <Card className="space-y-4 p-6">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-            Recorded observations
-          </h2>
-          {summary.observations.length === 0 ? (
-            <p className="text-sm text-gray-600 dark:text-gray-300">
-              No observations are available in a currently assigned class.
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+              Evidence summary
+            </h2>
+            <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
+              Saved classroom activities and their linked teacher-recorded outcomes.
+              These records support teacher inquiry; they are not diagnoses or fixed
+              conclusions about the learner.
             </p>
-          ) : (
-            <ul className="space-y-3">
-              {summary.observations.map((observation) => (
-                <li
-                  key={observation.observation_id}
-                  className="border-b border-gray-200 pb-3 last:border-0 dark:border-gray-700"
-                >
-                  <p className="text-sm text-gray-900 dark:text-gray-100">
-                    {observation.reviewed_observation ?? observation.original_observation}
-                  </p>
-                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                    {observation.observation_id} · {observation.observation_type} ·{" "}
-                    {new Date(observation.observed_at).toLocaleDateString()} ·{" "}
-                    {observation.teacher_review_status}
-                  </p>
-                  {observation.reviewed_observation && (
-                    <details className="mt-1 text-xs text-gray-600 dark:text-gray-300">
-                      <summary>View original wording</summary>
-                      <p className="mt-1">{observation.original_observation}</p>
-                    </details>
-                  )}
-                </li>
-              ))}
-            </ul>
-          )}
-        </Card>
-
-        <Card className="space-y-4 p-6">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-            Tests and explored questions
-          </h2>
+            {tests.length > 0 && (
+              <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                {tests.filter((test) => test.status === "COMPLETED").length} of{" "}
+                {tests.length} saved tests have recorded outcomes.
+              </p>
+            )}
+          </div>
           {tests.length === 0 ? (
             <p className="text-sm text-gray-600 dark:text-gray-300">
-              No test suggestions have been saved for this learner.
+              No classroom test activities have been saved for this learner yet.
             </p>
           ) : (
             <div className="space-y-5">
@@ -147,7 +122,9 @@ export default async function EvidencePage({
                 >
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <h3 className="font-medium text-gray-900 dark:text-gray-100">
-                      {test.exploration_question ?? test.suggested_activity}
+                      {test.exploration_question ??
+                        test.hypothesis ??
+                        test.suggested_activity}
                     </h3>
                     <span className="rounded bg-gray-100 px-2 py-1 text-xs dark:bg-gray-700">
                       {statusLabel(
@@ -156,30 +133,32 @@ export default async function EvidencePage({
                       )}
                     </span>
                   </div>
-                  <p className="whitespace-pre-wrap text-sm text-gray-700 dark:text-gray-200">
-                    {test.suggested_activity}
-                  </p>
+                  {test.hypothesis && test.exploration_question && (
+                    <p className="text-sm text-gray-700 dark:text-gray-200">
+                      Hypothesis: {test.hypothesis}
+                    </p>
+                  )}
+                  <div>
+                    <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                      Approved activity
+                    </h4>
+                    <p className="mt-1 whitespace-pre-wrap text-sm text-gray-700 dark:text-gray-200">
+                      {test.suggested_activity}
+                    </p>
+                  </div>
                   <p className="text-xs text-gray-500 dark:text-gray-400">
                     Test {test.test_id} · Planned {test.activity_date} · External
                     retrieval: {test.retrieval_status.replaceAll("_", " ")}
                   </p>
-                  {test.cited_observations.length > 0 && (
-                    <div>
-                      <h4 className="text-sm font-medium">Cited observations</h4>
-                      <ul className="list-inside list-disc text-sm text-gray-600 dark:text-gray-300">
-                        {test.cited_observations.map((citation) => (
-                          <li key={citation.observation_id}>
-                            {citation.reviewed_observation ?? citation.original_observation}{" "}
-                            <span className="text-xs">({citation.observation_id})</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
                   {test.observed_outcome && (
-                    <p className="text-sm text-gray-700 dark:text-gray-200">
-                      Teacher-recorded outcome: {test.observed_outcome}
-                    </p>
+                    <div className="rounded-md bg-green-50 p-3 dark:bg-green-950/30">
+                      <h4 className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                        Recorded outcome
+                      </h4>
+                      <p className="mt-1 text-sm text-gray-700 dark:text-gray-200">
+                        {test.observed_outcome}
+                      </p>
+                    </div>
                   )}
                   {sourceLinks(test.educational_sources).length > 0 && (
                     <ul className="text-sm">
