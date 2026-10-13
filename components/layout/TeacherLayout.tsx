@@ -8,7 +8,7 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
       <DesktopSidebar />
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-lg">
         <AppHeader />
-        <main className="mt-2 min-h-0 flex-1 overflow-y-auto rounded-lg pb-20 md:mt-0 md:pb-0">
+        <main className="mt-2 min-h-0 flex-1 overflow-y-auto rounded-lg p-4 pb-20 md:mt-0 md:p-6 md:pb-0">
           {children}
         </main>
         <MobileBottomNav />
