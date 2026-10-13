@@ -122,30 +122,32 @@ export default function SuggestionWorkflow({
   }
 
   return (
-    <section className="space-y-4 rounded-lg border border-gray-200 p-6 dark:border-gray-700">
-      <div>
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-          Explore a question
-        </h2>
-        <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
-          Generate an on-demand classroom activity from reviewed observations.
-          A teacher decides whether to accept it or request another.
-        </p>
+    <section className="rounded-lg border border-gray-200 bg-white p-4 dark:border-[#26364b] dark:bg-[#111e30]">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+            Explore a question
+          </h2>
+          <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
+            Generate an on-demand classroom activity from reviewed observations.
+            A teacher decides whether to accept it or request another.
+          </p>
+        </div>
+
+        {!suggestion && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void request("suggest")}
+            className="shrink-0 cursor-pointer rounded-md bg-blue-700 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-800 active:bg-blue-900 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {busy ? "Preparing suggestion…" : "Suggest Test"}
+          </button>
+        )}
       </div>
 
-      {!suggestion && (
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() => void request("suggest")}
-          className="cursor-pointer rounded-md bg-blue-700 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-800 active:bg-blue-900 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {busy ? "Preparing suggestion…" : "Suggest Test"}
-        </button>
-      )}
-
       {suggestion && !suggestion.ok && (
-        <div role="status" className="space-y-3 text-sm text-gray-700 dark:text-gray-200">
+        <div role="status" className="mt-3 space-y-3 text-sm text-gray-700 dark:text-gray-200">
           <p>{suggestion.message ?? `No suggestion available (${suggestion.status}).`}</p>
           <button
             type="button"
@@ -159,7 +161,7 @@ export default function SuggestionWorkflow({
       )}
 
       {suggestion?.ok && suggestion.suggested_activity && (
-        <div className="space-y-4 rounded-md bg-gray-50 p-4 dark:bg-gray-800">
+        <div className="mt-3 space-y-4 rounded-md bg-gray-50 p-4 dark:bg-[#0b1422]">
           <div>
             <p className="text-xs font-semibold uppercase tracking-wide text-blue-700 dark:text-blue-300">
               Proposed for teacher review
@@ -279,7 +281,7 @@ export default function SuggestionWorkflow({
       )}
 
       {message && (
-        <p role="status" className="text-sm text-gray-700 dark:text-gray-200">
+        <p role="status" className="mt-3 text-sm text-gray-700 dark:text-gray-200">
           {message}
         </p>
       )}
