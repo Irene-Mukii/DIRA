@@ -347,6 +347,26 @@ def make_observations(
     enrollments: list[dict], calendar: list[dict], seed: int
 ) -> tuple[list[dict], dict[tuple[str, str], list[str]]]:
     rng = random.Random(seed)
+    l003_enrollment = max(
+        (row for row in enrollments if row["learner_id"] == "L003"),
+        key=lambda row: row["academic_year"],
+        default=None,
+    )
+    demo_sessions: list[dict] = []
+    if l003_enrollment is not None:
+        demo_sessions_by_date: dict[str, dict] = {}
+        for session in sorted(
+            calendar,
+            key=lambda row: (row["calendar_date"], row["period_number"]),
+        ):
+            if (
+                session["class_id"] == l003_enrollment["class_id"]
+                and session["teacher_id"] == "T001"
+                and session["academic_year"] == l003_enrollment["academic_year"]
+            ):
+                demo_sessions_by_date.setdefault(session["calendar_date"], session)
+        demo_sessions = list(demo_sessions_by_date.values())[:2]
+
     sessions_by_class: dict[str, list[dict]] = {}
     for session in calendar:
         sessions_by_class.setdefault(session["class_id"], []).append(session)
@@ -360,8 +380,57 @@ def make_observations(
         for _ in range(rng.randint(2, 4)):
             session = rng.choice(sessions)
             observation_id = f"OBS{len(rows) + 1:06d}"
-            rows.append(make_observation(observation_id, learner_id, session, rng))
+            observation_type = (
+                "other"
+                if len(demo_sessions) == 2
+                and l003_enrollment is not None
+                and enrollment["learner_id"] == l003_enrollment["learner_id"]
+                and enrollment["academic_year"] == l003_enrollment["academic_year"]
+                else None
+            )
+            rows.append(
+                make_observation(
+                    observation_id,
+                    learner_id,
+                    session,
+                    rng,
+                    observation_type=observation_type,
+                )
+            )
             learner_observation_ids.setdefault(enrollment_key, []).append(observation_id)
+
+    if l003_enrollment is not None and len(demo_sessions) == 2:
+        for sequence, (session, content, context) in enumerate(
+            zip(
+                demo_sessions,
+                (
+                    "Synthetic demo: L003 offered an idea during a small-group puzzle.",
+                    "Synthetic demo: L003 added a suggestion during pair planning.",
+                ),
+                ("Synthetic small-group puzzle", "Synthetic pair planning"),
+                strict=True,
+            ),
+            start=1,
+        ):
+            observation_id = f"OBS_DEMO_L003_SUGGEST_{sequence:02d}"
+            observation = make_observation(
+                observation_id,
+                "L003",
+                session,
+                rng,
+                content=content,
+                observation_type="participation",
+            )
+            observation.update(
+                {
+                    "source_type": "Text note",
+                    "capture_method": "text",
+                    "activity_context": context,
+                    "possible_theme": "Participation",
+                    "submission_id": f"seed-{observation_id}",
+                }
+            )
+            rows.append(observation)
     return rows, learner_observation_ids
 
 
