@@ -10,12 +10,16 @@ interface SourceResult {
   page_url: string | null;
   title: string | null;
   excerpt: string | null;
+  error: string | null;
+  http_status: number | null;
+  retrieval_duration_ms: number | null;
 }
 
 interface ProposedSuggestion {
   ok: boolean;
   status: string;
   proposal_id?: string;
+  test_id?: string;
   message?: string;
   exploration_question?: string;
   hypothesis?: string;
@@ -26,6 +30,8 @@ interface ProposedSuggestion {
     purpose: string;
     steps: string[];
     what_to_observe: string[];
+    intended_outcome?: string;
+    assessment_criteria?: string[];
   };
   what_to_log_afterward?: string[];
   cited_observations?: Array<{ observation_id: string; content: string }>;
@@ -65,12 +71,12 @@ export default function SuggestionWorkflow({
         body: JSON.stringify({
           action,
           learner_id: learnerId,
-          ...(action !== "suggest" ? { submission_id: crypto.randomUUID() } : {}),
+          submission_id: crypto.randomUUID(),
           ...(action !== "suggest" && suggestion?.proposal_id
             ? { proposal_id: suggestion.proposal_id }
             : {}),
-          ...(action === "regenerate" && supersedesTestId
-            ? { supersedes_test_id: supersedesTestId }
+          ...(action === "regenerate" && (suggestion?.test_id || supersedesTestId)
+            ? { supersedes_test_id: suggestion?.test_id ?? supersedesTestId }
             : {}),
           ...(action === "accept"
             ? {
@@ -178,6 +184,18 @@ export default function SuggestionWorkflow({
                 <li key={step}>{step}</li>
               ))}
             </ol>
+            {suggestion.suggested_activity.intended_outcome && (
+              <p className="mt-2 text-sm text-gray-700 dark:text-gray-200">
+                Intended outcome: {suggestion.suggested_activity.intended_outcome}
+              </p>
+            )}
+            {suggestion.suggested_activity.assessment_criteria && (
+              <ul className="mt-2 list-inside list-disc text-sm text-gray-700 dark:text-gray-200">
+                {suggestion.suggested_activity.assessment_criteria.map((criterion) => (
+                  <li key={criterion}>{criterion}</li>
+                ))}
+              </ul>
+            )}
           </div>
           <div>
             <h4 className="font-medium text-gray-900 dark:text-gray-100">
@@ -210,6 +228,8 @@ export default function SuggestionWorkflow({
                   ) : (
                     <span>
                       {source.key}: {source.status.replaceAll("_", " ")}
+                      {source.error && ` · ${source.error.replaceAll("_", " ")}`}
+                      {source.http_status && ` · HTTP ${source.http_status}`}
                     </span>
                   )}
                   {source.excerpt && <p className="pl-4 text-xs">{source.excerpt}</p>}
