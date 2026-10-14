@@ -32,7 +32,11 @@ describe("GLM completion requests", () => {
     );
 
     await expect(createAgentCompletion([{ role: "user", content: "Suggest" }], []))
-      .resolves.toEqual({ content: "Generated activity", toolCalls: [] });
+      .resolves.toEqual({
+        content: "Generated activity",
+        toolCalls: [],
+        usage: null,
+      });
 
     expect(timeout).toHaveBeenCalledWith(75_000);
     expect(vi.mocked(fetch).mock.calls[0]?.[1]?.signal).toBe(signal);
@@ -72,6 +76,33 @@ describe("GLM completion requests", () => {
     expect(requestBody.reasoning_effort).toBe("low");
     expect(requestBody.response_format).toBeUndefined();
     expect(requestBody.tools).toHaveLength(1);
+  });
+
+  it("captures provider token usage when the response includes it", async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          choices: [{ message: { content: "Generated activity" } }],
+          usage: {
+            prompt_tokens: 1_000,
+            completion_tokens: 250,
+            prompt_tokens_details: { cached_tokens: 400 },
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+
+    await expect(createAgentCompletion(
+      [{ role: "user", content: "Suggest" }],
+      [],
+    )).resolves.toMatchObject({
+      usage: {
+        inputTokens: 1_000,
+        outputTokens: 250,
+        cachedInputTokens: 400,
+      },
+    });
   });
 
   it("logs the underlying network error and cause without logging credentials", async () => {
