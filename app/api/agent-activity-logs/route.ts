@@ -65,11 +65,21 @@ export async function GET(request: NextRequest) {
          id,
          run_id,
          timestamp,
+         event_type,
+         workflow,
          agent_action,
          tool_name,
          status,
          duration_ms,
-         error
+         error,
+         provider,
+         model,
+         input_tokens,
+         output_tokens,
+         cached_tokens,
+         cost_usd,
+         cost_status,
+         metadata
        FROM agent_activity_logs
        WHERE ($1::text IS NULL OR status = $1)
          AND ($2::text IS NULL OR tool_name = $2)
