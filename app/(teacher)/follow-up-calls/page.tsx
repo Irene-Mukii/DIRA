@@ -8,7 +8,13 @@ import { pool } from "@/lib/db/client";
 import { resolveTeacherContext } from "@/lib/auth/teacher-context";
 import { dispatchOneDueFollowUp } from "@/lib/services/follow-up-dispatch";
 import { queueManualDemoFollowUp } from "@/lib/services/follow-up-queue";
-import { getVoiceDemoDestination, isE164, isVoiceDemoMode } from "@/lib/services/voice-config";
+import {
+  getVoiceDemoDestination,
+  isE164,
+  isProductionPublicDemoVoiceEnabled,
+  isVoiceDemoMode,
+} from "@/lib/services/voice-config";
+import DemoCallDialog from "@/components/voice/DemoCallDialog";
 
 interface FollowUpCallRow {
   follow_up_job_id: string;
@@ -91,6 +97,9 @@ function safeErrorLabel(code: string | null): string | null {
 /** Queue an immediate demo-only job; it does not call the phone. */
 async function queueDemoCallAction() {
   "use server";
+  if (process.env.NODE_ENV === "production") {
+    redirect("/follow-up-calls?demoCall=unavailable");
+  }
   const context = await resolveTeacherContext();
   if (!context) {
     redirect("/follow-up-calls?demoCall=unavailable");
@@ -111,6 +120,9 @@ async function queueDemoCallAction() {
 /** Dispatch only the explicitly selected manual demo job; this places a real call. */
 async function dispatchDemoCallAction(formData: FormData) {
   "use server";
+  if (process.env.NODE_ENV === "production") {
+    redirect("/follow-up-calls?demoCall=unavailable");
+  }
   const context = await resolveTeacherContext();
   const jobId = formData.get("jobId");
   if (!context || typeof jobId !== "string" || !/^[0-9a-f-]{36}$/i.test(jobId)) {
@@ -252,6 +264,8 @@ export default async function FollowUpCallsPage({
           </Link>
         </header>
 
+        {isProductionPublicDemoVoiceEnabled() && <DemoCallDialog />}
+
         {demoCall && (
           <Card className="border border-blue-300 p-4 text-sm text-blue-900 dark:border-blue-800 dark:text-blue-200" role="status">
             {demoCall === "queued" && "A manual demo call is queued. It has not called your phone yet."}
@@ -334,7 +348,9 @@ export default async function FollowUpCallsPage({
                     <p className="text-sm text-gray-600 dark:text-gray-400">
                       <span className="font-medium">Next:</span> {details.nextAction}
                     </p>
-                    {call.is_manual_demo && call.status === "queued" && (
+                    {process.env.NODE_ENV !== "production" &&
+                      call.is_manual_demo &&
+                      call.status === "queued" && (
                       <form action={dispatchDemoCallAction}>
                         <input type="hidden" name="jobId" value={call.follow_up_job_id} />
                         <button

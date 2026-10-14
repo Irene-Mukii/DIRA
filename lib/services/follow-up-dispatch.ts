@@ -10,6 +10,8 @@ import {
 import {
   getVoiceDemoDestination,
   isE164,
+  isProductionDemoVoiceEnabled,
+  isProductionPublicDemoVoiceEnabled,
   isVoiceDemoMode,
 } from "@/lib/services/voice-config";
 
@@ -42,6 +44,13 @@ export interface FollowUpDispatchResult {
   is_demo?: boolean;
 }
 
+export type FollowUpDispatchAuthorization =
+  | { operatorAuthorized: true }
+  | {
+      publicDemoCallAuthorized: true;
+      destinationOverride: string;
+    };
+
 /**
  * Submit at most one eligible call per invocation, after rechecking the schedule.
  * DEMO MODE: the call goes only to the configured demo number and no teacher
@@ -55,8 +64,32 @@ export async function dispatchOneDueFollowUp(
   now: Date = new Date(),
   teacherContext?: LogObservationContext,
   manualDemoJobId?: string,
+  authorization?: FollowUpDispatchAuthorization,
 ): Promise<FollowUpDispatchResult | null> {
   const config = getVoiceConfiguration();
+  const publicDemoAuthorization =
+    authorization && "publicDemoCallAuthorized" in authorization
+      ? authorization
+      : null;
+  const operatorAuthorized =
+    authorization !== undefined &&
+    "operatorAuthorized" in authorization &&
+    authorization.operatorAuthorized;
+  if (
+    process.env.NODE_ENV === "production" &&
+    process.env.DIRA_DEMO_MODE === "true" &&
+    operatorAuthorized !== true &&
+    !publicDemoAuthorization
+  ) {
+    throw new Error("Production demo dispatch requires operator authorization");
+  }
+  if (
+    publicDemoAuthorization &&
+    (!isProductionPublicDemoVoiceEnabled() ||
+      !isE164(publicDemoAuthorization.destinationOverride))
+  ) {
+    throw new Error("Public demo call destination is not authorized");
+  }
   if (manualDemoJobId && (config.mode !== "demo" || !teacherContext)) {
     throw new Error("Manual demo dispatch requires an authorized demo context");
   }
@@ -71,8 +104,11 @@ export async function dispatchOneDueFollowUp(
     return null;
   }
 
-  const destination =
-    config.mode === "demo" ? config.destination : claimed.teacher_phone;
+  const destination = publicDemoAuthorization
+    ? publicDemoAuthorization.destinationOverride
+    : config.mode === "demo"
+      ? config.destination
+      : claimed.teacher_phone;
   if (!destination || !isE164(destination)) {
     // Safety net if contact data changed between the eligibility check and the claim;
     // nothing was sent, so the job returns to the queue instead of being lost.
@@ -95,6 +131,7 @@ export async function dispatchOneDueFollowUp(
       clientRequestId: claimed.provider_request_id,
       sandbox: config.sandbox,
       mode: config.mode,
+      ...(publicDemoAuthorization ? { publicDemoAuthorized: true as const } : {}),
     });
 
     await pool.query(
@@ -206,8 +243,23 @@ async function markStuckInitiatingJobs(now: Date): Promise<void> {
  */
 function getVoiceConfiguration(): VoiceConfiguration {
   const mode = isVoiceDemoMode() ? "demo" : "real";
-  if (mode === "demo" && process.env.NODE_ENV === "production") {
-    throw new Error("Demo calling is disabled in production builds");
+  if (
+    process.env.NODE_ENV === "production" &&
+    process.env.DIRA_DEMO_MODE === "true" &&
+    mode !== "demo"
+  ) {
+    throw new Error("Real teacher calls are disabled in demo deployments");
+  }
+  const publicDemoEnabled =
+    process.env.NODE_ENV === "production" &&
+    isProductionPublicDemoVoiceEnabled();
+  if (
+    mode === "demo" &&
+    process.env.NODE_ENV === "production" &&
+    !isProductionDemoVoiceEnabled() &&
+    !publicDemoEnabled
+  ) {
+    throw new Error("Production demo calling is not explicitly enabled");
   }
 
   // Voice uses its own live credentials; the SMS sandbox variables are never read here.
@@ -221,10 +273,13 @@ function getVoiceConfiguration(): VoiceConfiguration {
       "Africa's Talking voice is not fully configured (AFRICASTALKING_USERNAME_VOICE, AFRICASTALKING_API_KEY_VOICE, AFRICASTALKING_VOICE_FROM)",
     );
   }
-  if (mode === "demo" && !destination) {
+  if (mode === "demo" && !destination && !publicDemoEnabled) {
     throw new Error("Demo mode requires an explicit demo recipient number");
   }
-  if (!isE164(callerId) || (destination && !isE164(destination))) {
+  if (
+    !isE164(callerId) ||
+    (destination && !isE164(destination))
+  ) {
     throw new Error("Africa's Talking caller and demo destination must be E.164 numbers");
   }
 

@@ -30,6 +30,44 @@ applying migrations; do not run development migrations against production
 without a reviewed backup and deployment plan. PostgreSQL's Compose
 initialization scripts run only when its data volume is first created.
 
+## Operator-controlled production demo voice
+
+Production voice calls are disabled by default. A demo deployment can enable
+them only when `DIRA_DEMO_MODE=true`, `DIRA_DEMO_CALL_TEST_MODE=true`,
+`DIRA_ALLOW_PRODUCTION_DEMO_CALLS=true`, and `DIRA_DEMO_CALL_TO` is a valid
+E.164 number. The dispatcher and provider client both enforce the configured
+demo number; real-teacher calls are rejected when the app is in demo mode.
+
+Configure the Africa's Talking voice credentials, `AFRICASTALKING_VOICE_FROM`,
+`VOICE_CALLBACK_SECRET`, `DIRA_PUBLIC_BASE_URL`, and a long random
+`FOLLOW_UP_SCHEDULER_SECRET` as server-only deployment secrets. Register the
+HTTPS callback
+`<DIRA_PUBLIC_BASE_URL>/api/voice/cb/<VOICE_CALLBACK_SECRET>/teacher-follow-up`
+with Africa's Talking. Set `OPENAI_API_KEY` only if the demo will transcribe
+recordings; call recordings sent for transcription are processed by OpenAI.
+
+The public follow-up page does not dispatch production calls. An operator who
+holds the scheduler secret can explicitly queue and dispatch one demo call per
+request with `POST /api/internal/demo-voice` and an
+`Authorization: Bearer <FOLLOW_UP_SCHEDULER_SECRET>` header. This places a
+potentially chargeable call to the single configured demo number; repeat
+requests can place additional calls. Keep the secret private and invoke the
+endpoint only when the recipient has agreed to receive the test call. This is
+a controlled demo safeguard, not production teacher authentication or consent
+management. Use synthetic Dira data only.
+
+For the public visitor “Test a call” dialog, additionally set
+`DIRA_ALLOW_PUBLIC_DEMO_CALLS=true` and a random `DEMO_CALL_RATE_LIMIT_SECRET`
+of at least 32 bytes. The API requires the caller to confirm consent, validates
+E.164 phone numbers server-side, and enforces one request per number and ten
+requests total per rolling 24 hours. It stores only a keyed phone-number hash
+in `agent_activity_logs`; the phone is sent to Africa's Talking for delivery
+but is not persisted by this feature. A callback recording is still attached
+to the shared synthetic demo-teacher workflow and may be transcribed if
+`OPENAI_API_KEY` is configured, so callers must not mention real learner names
+or sensitive information. This is an abuse-limited public demo feature, not
+number ownership verification or production authentication.
+
 ## Independent external MCP client
 
 ### Endpoint, transport, identity, and prerequisites

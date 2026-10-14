@@ -7,6 +7,8 @@ import type { LogObservationContext } from "@/lib/db/schema";
 import {
   getVoiceDemoDestination,
   isE164,
+  isProductionDemoVoiceEnabled,
+  isProductionPublicDemoVoiceEnabled,
   isVoiceDemoMode,
 } from "@/lib/services/voice-config";
 
@@ -165,8 +167,12 @@ export async function queueManualDemoFollowUp(
   context: LogObservationContext,
   now: Date = new Date(),
 ): Promise<ManualDemoFollowUp> {
-  if (process.env.NODE_ENV === "production") {
-    throw new Error("Manual demo calls are disabled in production");
+  if (
+    process.env.NODE_ENV === "production" &&
+    !isProductionDemoVoiceEnabled() &&
+    !isProductionPublicDemoVoiceEnabled()
+  ) {
+    throw new Error("Production demo calls are not explicitly enabled");
   }
   if (!isVoiceDemoMode() || !isE164(getVoiceDemoDestination() ?? "")) {
     throw new Error("Enable demo mode and configure a valid demo destination first");

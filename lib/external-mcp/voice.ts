@@ -1,6 +1,12 @@
 import "server-only";
 
-import { getVoiceDemoDestination, isVoiceDemoMode } from "@/lib/services/voice-config";
+import {
+  getVoiceDemoDestination,
+  isE164,
+  isProductionDemoVoiceEnabled,
+  isProductionPublicDemoVoiceEnabled,
+  isVoiceDemoMode,
+} from "@/lib/services/voice-config";
 
 const REQUEST_TIMEOUT_MS = 15_000;
 const PRODUCTION_VOICE_ENDPOINT = "https://voice.africastalking.com/call";
@@ -16,6 +22,7 @@ export interface AfricaTalkingCallOptions {
   sandbox: boolean;
   /** "demo" sends only to the configured demo number; "real" to a DB-resolved teacher. */
   mode: "demo" | "real";
+  publicDemoAuthorized?: true;
 }
 
 export interface AfricaTalkingCallResult {
@@ -46,7 +53,11 @@ export class AfricaTalkingCallError extends Error {
 export async function initiateAfricaTalkingCall(
   options: AfricaTalkingCallOptions,
 ): Promise<AfricaTalkingCallResult> {
-  assertCallAllowed(options.mode, options.destination);
+  assertCallAllowed(
+    options.mode,
+    options.destination,
+    options.publicDemoAuthorized === true,
+  );
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   const body = new URLSearchParams({
@@ -137,19 +148,32 @@ async function readSessionId(response: Response): Promise<string | null> {
 /**
  * Enforce the destination gate at the provider boundary itself.
  * - Tests never place chargeable calls: Vitest always blocks this client (mock it).
- * - Demo mode: only the configured demo number, never in production builds
+ * - Demo mode: only the configured demo number; production requires explicit opt-in
  *   (DEMO BYPASS: skips teacher phone/consent lookup so the flow can be tested).
  * - Real mode: demo mode must be off, so a real teacher number can never be dialled
  *   while the demo switch is on, and the demo number is never a silent fallback.
  */
-function assertCallAllowed(mode: "demo" | "real", destination: string): void {
+function assertCallAllowed(
+  mode: "demo" | "real",
+  destination: string,
+  publicDemoAuthorized: boolean,
+): void {
   if (process.env.VITEST) {
     throw new Error("Africa's Talking calls are blocked under automated tests");
   }
   if (mode === "demo") {
     const configuredDestination = getVoiceDemoDestination();
     if (
-      process.env.NODE_ENV === "production" ||
+      publicDemoAuthorized &&
+      process.env.NODE_ENV === "production" &&
+      isProductionPublicDemoVoiceEnabled() &&
+      isE164(destination)
+    ) {
+      return;
+    }
+    if (
+      (process.env.NODE_ENV === "production" &&
+        !isProductionDemoVoiceEnabled()) ||
       !isVoiceDemoMode() ||
       !configuredDestination ||
       destination !== configuredDestination
@@ -157,6 +181,12 @@ function assertCallAllowed(mode: "demo" | "real", destination: string): void {
       throw new Error("Africa's Talking call blocked by the demo destination gate");
     }
     return;
+  }
+  if (
+    process.env.NODE_ENV === "production" &&
+    process.env.DIRA_DEMO_MODE === "true"
+  ) {
+    throw new Error("Real teacher calls are disabled in demo deployments");
   }
   if (isVoiceDemoMode() || destination === getVoiceDemoDestination()) {
     throw new Error("Africa's Talking call blocked: real mode cannot use demo settings");

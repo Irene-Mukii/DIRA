@@ -259,6 +259,16 @@ export function createDiraMcpServer(): McpServer {
         "Request at most one due call for the server-resolved demo teacher. Server-side schedule, destination, demo-mode, and atomic claim checks remain authoritative.",
     },
     async () => {
+      if (
+        process.env.NODE_ENV === "production" &&
+        process.env.DIRA_DEMO_MODE === "true"
+      ) {
+        return toolError(
+          "operator_dispatch_required",
+          "Production demo calls can only be dispatched through the operator-controlled endpoint.",
+        );
+      }
+
       try {
         const context = await resolveTeacherContext();
         if (!context) {

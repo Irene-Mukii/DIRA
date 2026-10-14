@@ -8,6 +8,16 @@ export const runtime = "nodejs";
  * Let a trusted scheduler dispatch at most one currently due call per request.
  */
 export async function POST(request: NextRequest) {
+  if (
+    process.env.NODE_ENV === "production" &&
+    process.env.DIRA_DEMO_MODE === "true"
+  ) {
+    return NextResponse.json(
+      { error: "Use the operator-controlled demo voice endpoint" },
+      { status: 403 },
+    );
+  }
+
   const expectedSecret = process.env.FOLLOW_UP_SCHEDULER_SECRET;
   if (!expectedSecret) {
     return NextResponse.json(
@@ -24,7 +34,12 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const result = await dispatchOneDueFollowUp();
+    const result = await dispatchOneDueFollowUp(
+      new Date(),
+      undefined,
+      undefined,
+      { operatorAuthorized: true },
+    );
     return NextResponse.json({ call: result });
   } catch (error) {
     console.error("Failed to dispatch teacher follow-up:", error);

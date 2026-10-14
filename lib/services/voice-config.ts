@@ -13,6 +13,35 @@ export function isVoiceDemoMode(): boolean {
   return value?.trim() === "true";
 }
 
+/** Explicit opt-in required before demo calls can be sent from production. */
+export function isProductionDemoVoiceEnabled(): boolean {
+  const destination = getVoiceDemoDestination();
+  return (
+    isProductionDemoVoiceBaseEnabled() &&
+    destination !== undefined &&
+    isE164(destination)
+  );
+}
+
+export function isProductionPublicDemoVoiceEnabled(): boolean {
+  const rateLimitSecret = process.env.DEMO_CALL_RATE_LIMIT_SECRET?.trim();
+  return (
+    isProductionDemoVoiceBaseEnabled() &&
+    process.env.DIRA_ALLOW_PUBLIC_DEMO_CALLS === "true" &&
+    rateLimitSecret !== undefined &&
+    Buffer.byteLength(rateLimitSecret) >= 32
+  );
+}
+
+function isProductionDemoVoiceBaseEnabled(): boolean {
+  return (
+    process.env.NODE_ENV === "production" &&
+    process.env.DIRA_DEMO_MODE === "true" &&
+    process.env.DIRA_ALLOW_PRODUCTION_DEMO_CALLS === "true" &&
+    isVoiceDemoMode()
+  );
+}
+
 /** The single phone number demo-mode calls are allowed to reach, if configured. */
 export function getVoiceDemoDestination(): string | undefined {
   const value =
