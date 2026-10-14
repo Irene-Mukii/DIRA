@@ -122,7 +122,29 @@ A separate result table can be considered later if results need structured scori
 
 ### 2.8 Evidence Card / summary
 
-The card may be computed on request from current underlying records. Persisting the final generated prose is optional and should not be required for correctness. If snapshots are saved for performance or history, store the relevant time range, generation time/version and references to source records; always be able to rebuild from underlying records.
+The Evidence Card summary is generated on page load from current underlying
+records and is not persisted. It is a separate GLM-generated interpretation,
+not an authoritative observation or hypothesis assessment. Each summary claim
+must cite IDs from the supplied snapshot.
+
+Hypothesis assessment is explicit and on demand. `activity_tests.hypothesis`
+remains the hypothesis source; a completed test must have its canonical linked
+teacher-recorded outcome before assessment. `NOT_ASSESSABLE_YET` is a response
+state and is never stored as an evidence classification.
+
+`hypothesis_assessments` stores immutable versions, each linked to the same
+learner/test and optionally to the preceding version for that test. It stores
+the classification (`SUPPORTS`, `MIXED`, `CONTRADICTS`, or
+`INSUFFICIENT_EVIDENCE`), rationale, uncertainty, limitations, next information
+needed, evidence and research references, retrieval status, assessment time,
+model, prompt version, trigger, and change explanation. A partial unique index
+allows at most one `CURRENT` assessment per test. Reassessment marks the prior
+version `SUPERSEDED` and inserts a new `CURRENT` version in one transaction;
+failed model, retrieval, validation, or persistence attempts never replace a
+valid assessment. Assessment data does not overwrite the test or observations.
+
+The table is defined in `lib/db/dataset_schema.sql` and deployed for initialized
+PostgreSQL databases by `db/008_hypothesis_assessments.sql`.
 
 The current MVP does not need a `pathway_notes`, `approvals`, or
 `guardian_deliveries` table to support the revised Evidence Card.
@@ -134,6 +156,12 @@ separate from the active observation transcription-review lifecycle and its
 `observation_review_history`.
 
 ### 2.9 Operational logs
+
+Summary generation and each assessment/reassessment use the existing
+`agent_activity_logs` mechanism as separate operations. Store only safe
+operation metadata, learner/test IDs, model and prompt version, trigger,
+duration, status, retrieval status, and safe error codes. Do not log prompts,
+raw learner observations, or chain-of-thought.
 
 A minimal `agent_activity_logs`/equivalent record may contain:
 

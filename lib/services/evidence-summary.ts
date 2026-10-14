@@ -3,7 +3,7 @@ import type { QueryResultRow } from "pg";
 import { pool } from "@/lib/db/client";
 import type { SuggestTestContext } from "@/lib/mcp-tools/suggestTest";
 
-interface EvidenceObservation {
+export interface EvidenceObservation {
   observation_id: string;
   observation_type: string;
   original_observation: string;
@@ -15,7 +15,7 @@ interface EvidenceObservation {
   activity_context: string | null;
 }
 
-interface EvidenceTest {
+export interface EvidenceTest {
   test_id: string;
   supersedes_test_id: string | null;
   status: "SUGGESTED" | "ACCEPTED" | "COMPLETED";
@@ -37,9 +37,24 @@ interface EvidenceTest {
     observation_type: string;
     original_observation: string;
     reviewed_observation: string | null;
-    observed_at: Date;
+    observed_at: string;
     teacher_id: string;
+    teacher_review_status: string;
+    citation_role: "supporting" | "contradicting" | "context";
   }>;
+}
+
+export interface EvidenceSnapshot {
+  learner: {
+    learner_id: string;
+    display_name: string;
+    grade_level: string;
+    stream_label: string;
+    academic_year: number;
+  };
+  observations: EvidenceObservation[];
+  tests: EvidenceTest[];
+  test_count: number;
 }
 
 export class EvidenceSummaryNotFoundError extends Error {
@@ -99,7 +114,7 @@ async function runEvidenceQuery<T extends QueryResultRow>(
 export async function buildEvidenceSummary(
   learnerIdInput: string,
   context: SuggestTestContext,
-) {
+): Promise<EvidenceSnapshot> {
   const learnerId = learnerIdInput.trim();
   if (!learnerId || !context.teacher_id.trim() || !context.school_id.trim()) {
     throw new Error("A learner and trusted teacher/school context are required");
@@ -189,7 +204,9 @@ export async function buildEvidenceSummary(
                   'original_observation', evidence.original_observation,
                   'reviewed_observation', evidence.reviewed_observation,
                   'observed_at', evidence.observed_at,
-                  'teacher_id', evidence.teacher_id
+                  'teacher_id', evidence.teacher_id,
+                  'teacher_review_status', evidence.teacher_review_status,
+                  'citation_role', ato.citation_role
                 )
                 ORDER BY evidence.observed_at
               ) FILTER (WHERE evidence.observation_id IS NOT NULL),

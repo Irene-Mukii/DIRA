@@ -17,8 +17,8 @@ export default function DesktopSidebar() {
       <div className="flex flex-col h-full bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
         <div className="flex items-center justify-center px-4 py-6 rounded-t-lg">
           <Link href="/" className="flex items-center gap-x-2">
-            <Image src="/images/logo.png" alt="DIRA" width={40} height={40} />
-            <span className="text-lg font-semibold text-gray-900 dark:text-gray-100">DIRA</span>
+            <Image src="/images/logo.png" alt="DIRA" width={56} height={56} />
+            <span className="text-xl font-semibold text-gray-900 dark:text-gray-100">DIRA</span>
           </Link>
         </div>
         <nav className="flex flex-col items-center space-y-1 px-2 py-4">

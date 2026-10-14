@@ -57,7 +57,7 @@ export default function ObservationChat({
   useEffect(() => {
     const controller = new AbortController();
     let isCurrentRequest = true;
-    const timeoutId = window.setTimeout(() => controller.abort(), 15_000);
+    const timeoutId = window.setTimeout(() => controller.abort(), 60_000);
 
     const loadObservations = async () => {
       if (!learnerId) {

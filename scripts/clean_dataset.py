@@ -152,8 +152,8 @@ def check_reference(condition: bool, message: str, errors: list[str]) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--input-dir", type=Path, default=Path("data/generated_dev"))
-    parser.add_argument("--output-dir", type=Path, default=Path("data/cleaned/generated_dev"))
+    parser.add_argument("--input-dir", type=Path, default=Path("data/generated_day2"))
+    parser.add_argument("--output-dir", type=Path, default=Path("data/cleaned/generated_day2"))
     args = parser.parse_args()
     input_dir = resolve_path(args.input_dir)
     output_dir = resolve_path(args.output_dir)

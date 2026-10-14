@@ -1,6 +1,7 @@
 import "server-only";
 
 export const DIRA_AGENT_MODEL = "glm-5.3-flash";
+const GLM_REQUEST_TIMEOUT_MS = 75_000;
 
 export interface AgentFunctionTool {
   name: string;
@@ -44,6 +45,41 @@ export class GlmRequestError extends Error {
     super(message);
     this.name = "GlmRequestError";
   }
+}
+
+function sanitizeDiagnostic(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  return value
+    .replace(/(bearer\s+)[^\s,;]+/gi, "$1[REDACTED]")
+    .replace(/((?:api[_ -]?key|authorization)\s*[:=]\s*)[^\s,;]+/gi, "$1[REDACTED]")
+    .slice(0, 500);
+}
+
+function describeRequestError(
+  error: unknown,
+  depth = 0,
+): Record<string, unknown> {
+  if (depth > 2) return {};
+  if (!(error instanceof Error)) {
+    return { errorMessage: sanitizeDiagnostic(String(error)) };
+  }
+
+  const details: Record<string, unknown> = {
+    errorName: sanitizeDiagnostic(error.name),
+    errorMessage: sanitizeDiagnostic(error.message),
+  };
+  const properties = error as Error & Record<string, unknown>;
+  for (const key of ["code", "syscall", "hostname", "port"] as const) {
+    const value = properties[key];
+    if (typeof value === "string" || typeof value === "number") {
+      details[key === "code" ? "errorCode" : key] =
+        sanitizeDiagnostic(String(value));
+    }
+  }
+  if (properties.cause !== undefined) {
+    details.cause = describeRequestError(properties.cause, depth + 1);
+  }
+  return details;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -104,6 +140,8 @@ export async function createAgentCompletion(
     throw new GlmConfigurationError("ZAI_API_KEY is not configured");
   }
 
+  const signal = AbortSignal.timeout(GLM_REQUEST_TIMEOUT_MS);
+  const requestStartedAt = Date.now();
   let response: Response;
   try {
     response = await fetch(
@@ -117,6 +155,10 @@ export async function createAgentCompletion(
         body: JSON.stringify({
           model: DIRA_AGENT_MODEL,
           messages,
+          reasoning_effort: "low",
+          ...(tools.length === 0
+            ? { response_format: { type: "json_object" } }
+            : {}),
           ...(tools.length > 0
             ? {
                 tools: tools.map((tool) => ({
@@ -133,10 +175,20 @@ export async function createAgentCompletion(
           temperature: 0.2,
           stream: false,
         }),
-        signal: AbortSignal.timeout(25_000),
+        signal,
       },
     );
-  } catch {
+  } catch (error) {
+    const timedOut =
+      signal.aborted ||
+      (error instanceof Error && error.name === "TimeoutError");
+    console.error("GLM request failed", {
+      model: DIRA_AGENT_MODEL,
+      duration_ms: Date.now() - requestStartedAt,
+      timeout_ms: GLM_REQUEST_TIMEOUT_MS,
+      failure_type: timedOut ? "timeout" : "network",
+      error: describeRequestError(error),
+    });
     throw new GlmRequestError("Could not reach the configured GLM service");
   }
 

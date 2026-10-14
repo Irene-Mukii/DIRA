@@ -4,11 +4,13 @@ import MobileBottomNav from "./MobileBottomNav";
 
 export default function TeacherLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex w-full h-screen bg-gray-50 dark:bg-gray-900 gap-4 p-4">
+    <div className="flex h-dvh w-full gap-4 overflow-hidden bg-gray-50 p-4 dark:bg-gray-900">
       <DesktopSidebar />
-      <div className="flex flex-1 flex-col overflow-hidden min-w-0 rounded-lg">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-lg">
         <AppHeader />
-        <main className="flex-1 overflow-hidden mt-2 md:mt-0 rounded-lg">{children}</main>
+        <main className="mt-2 min-h-0 flex-1 overflow-y-auto rounded-lg p-4 pb-20 md:mt-0 md:p-6 md:pb-0">
+          {children}
+        </main>
         <MobileBottomNav />
       </div>
     </div>

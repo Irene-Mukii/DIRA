@@ -68,6 +68,51 @@ SOURCES = {
     "Teacher chat": "other",
 }
 
+KENYAN_FIRST_NAMES = (
+    "Brian", "Brianna", "James", "Jame", "Mary", "Maria", "John", "Jonathan",
+    "Peter", "Peterson", "David", "Davis", "Elizabeth", "Eliza", "Joseph", "Josephine",
+    "Samuel", "Sammy", "Grace", "Gracie", "Thomas", "Tom", "Margaret", "Maggie",
+    "Daniel", "Danny", "Catherine", "Cathy", "Michael", "Mike", "Anne", "Annie",
+    "Francis", "Frank", "Lucy", "Lucia", "Stephen", "Steven", "Jane", "Janet",
+    "Paul", "Paulo", "Esther", "Esty", "Robert", "Rob", "Rose", "Rosie",
+    "William", "Will", "Alice", "Alicia", "Charles", "Charlie", "Sarah", "Sara",
+    "George", "Georgina", "Ruth", "Ruthie", "Henry", "Harry", "Patricia", "Pat",
+    "Edward", "Eddy", "Irene", "Ivy", "Beatrice", "Bea", "Andrew", "Andy",
+    "Florence", "Flo", "Christopher", "Chris", "Gladys", "Glady", "Martin", "Marty",
+    "Monica", "Mona", "Nicholas", "Nick", "Angela", "Angie", "Teresa", "Tess",
+    "Richard", "Rich", "Christine", "Chris", "Moses", "Mo", "Janet", "Jan",
+    "Joshua", "Josh", "Lillian", "Lily", "Timothy", "Tim", "Naomi", "Nao",
+    "Vincent", "Vince", "Carol", "Carole", "Patrick", "Pat", "Joyce", "Joy",
+    "Dominic", "Dom", "Joan", "Jo", "Felix", "Fel", "Rebecca", "Becky",
+    "Gabriel", "Gabe", "Susan", "Sue", "Raphael", "Raph", "Diana", "Diane",
+    "Bernard", "Bernie", "Anthony", "Tony", "Benjamin", "Ben", "Emmanuel", "Emma",
+    "Mark", "Marco", "Luke", "Lucas", "Matthew", "Matt", "Philip", "Phil",
+    "Simon", "Sim", "Mark", "Mark", "Luke", "Lucas", "Matthew", "Matt",
+    "Philip", "Phil", "Simon", "Sim"
+)
+
+KENYAN_LAST_NAMES = (
+    "Otieno", "Omondi", "Odhiambo", "Ochieng", "Ongele", "Ouma", "Okoth", "Owino",
+    "Ojwang", "Onguru", "Obuya", "Ochola", "Ochilo", "Ochanda", "Ochango", "Ocharo",
+    "Wanjiku", "Wambui", "Wangari", "Wairimu", "Wanjiru", "Wambura", "Wangeci", "Wangechi",
+    "Kamau", "Kariuki", "Karanja", "Kinyua", "Kihika", "Kigotho", "Kihara", "Kibe",
+    "Mwangi", "Mwangi", "Mwai", "Mwangi", "Mwangi", "Mwangi", "Mwangi", "Mwangi",
+    "Njoroge", "Njenga", "Njuguna", "Njau", "Ndirangu", "Ndegwa", "Ndungu", "Njoka",
+    "Mbugua", "Mburu", "Miano", "Mikwa", "Mburu", "Mbugua", "Mbugua", "Mbugua",
+    "Gitau", "Gichuki", "Gikonyo", "Githinji", "Gichuru", "Githui", "Githae", "Gikonyo",
+    "Chege", "Chepkwony", "Chepkoech", "Chepkorir", "Chepkwony", "Chepkwony", "Chepkwony", "Chepkwony",
+    "Koech", "Kiprop", "Kipkorir", "Kipchumba", "Kipchoge", "Kipketer", "Kipkore", "Kipkosgei",
+    "Mutai", "Mutiso", "Mutua", "Mutuku", "Mutinda", "Muthoka", "Muthoni", "Muthui",
+    "Kamau", "Karanja", "Kariuki", "Kinyua", "Kihika", "Kigotho", "Kihara", "Kibe",
+    "Maina", "Maina", "Maina", "Maina", "Maina", "Maina", "Maina", "Maina",
+    "Njoroge", "Njenga", "Njuguna", "Njau", "Ndirangu", "Ndegwa", "Ndungu", "Njoka",
+    "Mbugua", "Mburu", "Miano", "Mikwa", "Mburu", "Mbugua", "Mbugua", "Mbugua",
+    "Gitau", "Gichuki", "Gikonyo", "Githinji", "Gichuru", "Githui", "Githae", "Gikonyo",
+    "Chege", "Chepkwony", "Chepkoech", "Chepkorir", "Chepkwony", "Chepkwony", "Chepkwony", "Chepkwony",
+    "Koech", "Kiprop", "Kipkorir", "Kipchumba", "Kipchoge", "Kipketer", "Kipkore", "Kipkosgei",
+    "Mutai", "Mutiso", "Mutua", "Mutuku", "Mutinda", "Muthoka", "Muthoni", "Muthui"
+)
+
 
 def write_csv(path: Path, fieldnames: list[str], rows: list[dict]) -> None:
     with path.open("w", newline="", encoding="utf-8") as output:
@@ -128,17 +173,148 @@ def make_classes(first_year: int, last_year: int, streams_per_grade: int) -> lis
     ]
 
 
+SIMILAR_NAME_PAIRS = [
+    ("Brian", "Brianna"),
+    ("James", "Jame"),
+    ("Mary", "Maria"),
+    ("John", "Jonathan"),
+    ("Peter", "Peterson"),
+    ("David", "Davis"),
+    ("Elizabeth", "Eliza"),
+    ("Joseph", "Josephine"),
+    ("Samuel", "Sammy"),
+    ("Grace", "Gracie"),
+    ("Thomas", "Tom"),
+    ("Margaret", "Maggie"),
+    ("Daniel", "Danny"),
+    ("Catherine", "Cathy"),
+    ("Michael", "Mike"),
+    ("Anne", "Annie"),
+    ("Francis", "Frank"),
+    ("Lucy", "Lucia"),
+    ("Stephen", "Steven"),
+    ("Jane", "Janet"),
+    ("Paul", "Paulo"),
+    ("Esther", "Esty"),
+    ("Robert", "Rob"),
+    ("Rose", "Rosie"),
+    ("William", "Will"),
+    ("Alice", "Alicia"),
+    ("Charles", "Charlie"),
+    ("Sarah", "Sara"),
+    ("George", "Georgina"),
+    ("Ruth", "Ruthie"),
+    ("Henry", "Harry"),
+    ("Patricia", "Pat"),
+    ("Edward", "Eddy"),
+    ("Irene", "Ivy"),
+    ("Beatrice", "Bea"),
+    ("Andrew", "Andy"),
+    ("Florence", "Flo"),
+    ("Christopher", "Chris"),
+    ("Gladys", "Glady"),
+    ("Martin", "Marty"),
+    ("Monica", "Mona"),
+    ("Nicholas", "Nick"),
+    ("Angela", "Angie"),
+    ("Teresa", "Tess"),
+    ("Richard", "Rich"),
+    ("Christine", "Chris"),
+    ("Moses", "Mo"),
+    ("Janet", "Jan"),
+    ("Joshua", "Josh"),
+    ("Lillian", "Lily"),
+    ("Timothy", "Tim"),
+    ("Naomi", "Nao"),
+    ("Vincent", "Vince"),
+    ("Carol", "Carole"),
+    ("Patrick", "Pat"),
+    ("Joyce", "Joy"),
+    ("Dominic", "Dom"),
+    ("Joan", "Jo"),
+    ("Felix", "Fel"),
+    ("Rebecca", "Becky"),
+    ("Gabriel", "Gabe"),
+    ("Susan", "Sue"),
+    ("Raphael", "Raph"),
+    ("Diana", "Diane"),
+    ("Bernard", "Bernie"),
+    ("Anthony", "Tony"),
+    ("Benjamin", "Ben"),
+    ("Emmanuel", "Emma"),
+    ("Mark", "Marco"),
+    ("Luke", "Lucas"),
+    ("Matthew", "Matt"),
+    ("Philip", "Phil"),
+    ("Simon", "Sim"),
+]
+
+EXACT_MATCH_FIRST_NAMES = ("James", "Peter", "David", "John")
+
 def make_learners(count: int, streams_per_grade: int) -> tuple[list[dict], list[dict]]:
     learners = []
     enrollments = []
     grade_cycle = ("Grade 4", "Grade 4", "Grade 5", "Grade 5", "Grade 6", "Grade 6")
     statuses = ("Active", "Active", "At risk", "Active", "Active", "Transitioning")
+    rng = random.Random(12345)
+    
+    max_similar_pairs = min(10, count // 2)
+    similar_name_indices = set()
+    for i in range(0, max_similar_pairs * 2, 2):
+        similar_name_indices.add(i)
+        if i + 1 < count:
+            similar_name_indices.add(i + 1)
+    
+    exact_match_indices = set()
+    exact_match_start = max(similar_name_indices) + 1 if similar_name_indices else 0
+    max_exact_pairs = min(len(EXACT_MATCH_FIRST_NAMES), (count - exact_match_start) // 2)
+    for i in range(exact_match_start, min(count, exact_match_start + max_exact_pairs * 2), 2):
+        exact_match_indices.add(i)
+        if i + 1 < count:
+            exact_match_indices.add(i + 1)
+    
+    used_first_names: dict[tuple[str, str, str], list[str]] = {}
+    class_exact_match_names: dict[tuple[str, str, str], list[str]] = {}
+    
     for index in range(count):
         learner_id = f"L{index + 1:03d}"
         grade = grade_cycle[index % len(grade_cycle)]
         stream = chr(65 + (index // len(grade_cycle)) % streams_per_grade)
+        
+        class_key = (grade, stream, str(2026))
+        class_first_names = used_first_names.get(class_key, [])
+        class_exact_names = class_exact_match_names.get(class_key, [])
+        
+        if index in exact_match_indices and index + 1 < count:
+            pair_number = (index - exact_match_start) // 2
+            if pair_number < len(EXACT_MATCH_FIRST_NAMES):
+                first_name = EXACT_MATCH_FIRST_NAMES[pair_number]
+            else:
+                first_name = rng.choice(KENYAN_FIRST_NAMES)
+        elif index in similar_name_indices and index + 1 < count:
+            pair_idx = (index // 2) % len(SIMILAR_NAME_PAIRS)
+            first_name_1, first_name_2 = SIMILAR_NAME_PAIRS[pair_idx]
+            
+            first_name = first_name_1
+            if first_name in class_first_names:
+                first_name = first_name_2
+        else:
+            first_name = rng.choice(KENYAN_FIRST_NAMES)
+            while first_name in class_first_names and len(class_first_names) < 20:
+                first_name = rng.choice(KENYAN_FIRST_NAMES)
+        
+        if index in exact_match_indices:
+            class_exact_names.append(first_name)
+            class_exact_match_names[class_key] = class_exact_names
+        
+        class_first_names.append(first_name)
+        used_first_names[class_key] = class_first_names
+        
+        last_name = rng.choice(KENYAN_LAST_NAMES)
+        display_name = f"{first_name} {last_name}"
+        
         learners.append(
-            {"learner_id": learner_id, "display_name": f"Synthetic Learner {index + 1:03d}"}
+            {"learner_id": learner_id, "display_name": display_name}
         )
         for year in (2025, 2026):
             enrollments.append(
@@ -347,6 +523,26 @@ def make_observations(
     enrollments: list[dict], calendar: list[dict], seed: int
 ) -> tuple[list[dict], dict[tuple[str, str], list[str]]]:
     rng = random.Random(seed)
+    l003_enrollment = max(
+        (row for row in enrollments if row["learner_id"] == "L003"),
+        key=lambda row: row["academic_year"],
+        default=None,
+    )
+    demo_sessions: list[dict] = []
+    if l003_enrollment is not None:
+        demo_sessions_by_date: dict[str, dict] = {}
+        for session in sorted(
+            calendar,
+            key=lambda row: (row["calendar_date"], row["period_number"]),
+        ):
+            if (
+                session["class_id"] == l003_enrollment["class_id"]
+                and session["teacher_id"] == "T001"
+                and session["academic_year"] == l003_enrollment["academic_year"]
+            ):
+                demo_sessions_by_date.setdefault(session["calendar_date"], session)
+        demo_sessions = list(demo_sessions_by_date.values())[:2]
+
     sessions_by_class: dict[str, list[dict]] = {}
     for session in calendar:
         sessions_by_class.setdefault(session["class_id"], []).append(session)
@@ -360,8 +556,57 @@ def make_observations(
         for _ in range(rng.randint(2, 4)):
             session = rng.choice(sessions)
             observation_id = f"OBS{len(rows) + 1:06d}"
-            rows.append(make_observation(observation_id, learner_id, session, rng))
+            observation_type = (
+                "other"
+                if len(demo_sessions) == 2
+                and l003_enrollment is not None
+                and enrollment["learner_id"] == l003_enrollment["learner_id"]
+                and enrollment["academic_year"] == l003_enrollment["academic_year"]
+                else None
+            )
+            rows.append(
+                make_observation(
+                    observation_id,
+                    learner_id,
+                    session,
+                    rng,
+                    observation_type=observation_type,
+                )
+            )
             learner_observation_ids.setdefault(enrollment_key, []).append(observation_id)
+
+    if l003_enrollment is not None and len(demo_sessions) == 2:
+        for sequence, (session, content, context) in enumerate(
+            zip(
+                demo_sessions,
+                (
+                    "Synthetic demo: L003 offered an idea during a small-group puzzle.",
+                    "Synthetic demo: L003 added a suggestion during pair planning.",
+                ),
+                ("Synthetic small-group puzzle", "Synthetic pair planning"),
+                strict=True,
+            ),
+            start=1,
+        ):
+            observation_id = f"OBS_DEMO_L003_SUGGEST_{sequence:02d}"
+            observation = make_observation(
+                observation_id,
+                "L003",
+                session,
+                rng,
+                content=content,
+                observation_type="participation",
+            )
+            observation.update(
+                {
+                    "source_type": "Text note",
+                    "capture_method": "text",
+                    "activity_context": context,
+                    "possible_theme": "Participation",
+                    "submission_id": f"seed-{observation_id}",
+                }
+            )
+            rows.append(observation)
     return rows, learner_observation_ids
 
 
@@ -473,7 +718,7 @@ def main() -> None:
     parser.add_argument("--academic-year", type=int, default=2026)
     parser.add_argument("--streams-per-grade", type=int, default=2)
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--output-dir", type=Path, default=Path("data/generated_dev"))
+    parser.add_argument("--output-dir", type=Path, default=Path("data/generated_day2"))
     parser.add_argument("--include-teacher-reviews", action="store_true")
     args = parser.parse_args()
     if args.learners < 1 or not 1 <= args.streams_per_grade <= 26:
