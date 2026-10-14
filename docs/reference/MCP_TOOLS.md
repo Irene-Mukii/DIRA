@@ -166,6 +166,21 @@ deterministic activity fallback. The graph persists each validated proposal as
 snapshot and relational evidence links, before returning it. `submission_id`
 prevents duplicate persistence on request retries.
 
+The shared GLM adapter requests low reasoning effort for all calls. For
+generation calls without function tools, it also requests JSON-object response
+mode; tool-calling requests retain their function-call response mode. JSON mode
+ensures JSON syntax, not conformance to the application's full output schema, so
+application-side validation remains authoritative.
+
+Generated content is currently structured for application validation and can
+still be longer or less readable than a teacher-facing explanation should be.
+A follow-up presentation improvement should make it concise and scannable: lead
+with the exploration question and practical activity, keep steps and
+observation prompts brief, and make supporting evidence, uncertainty, and
+limitations easy to inspect without repeating the full record. This is planned
+work; it does not change the persisted evidence or suggestion validation
+contract.
+
 ```mermaid
 flowchart LR
     API[Suggest Test route or suggest_test MCP tool] --> GRAPH[LangGraph.js]
@@ -299,6 +314,15 @@ uses the application reasoning service for automatic summary generation and
 explicit hypothesis assessment; neither operation is exposed as a new MCP tool.
 Assessment persistence uses versioned `hypothesis_assessments` rows, separate
 from test lifecycle and observation records.
+
+The shared GLM adapter requests low reasoning effort and JSON-object response
+mode for this generation call. The response is checked against an application
+schema and its evidence references are validated against the supplied snapshot.
+The current summary may be verbose; improving it into a concise, teacher-friendly
+presentation with clearly separated observed facts, tentative interpretations,
+conflicts, and evidence gaps remains follow-up work. Preserve the distinction
+between recorded facts and interpretation, and retain traceable evidence
+references when improving presentation.
 
 ## 10. Common error contract
 

@@ -155,6 +155,10 @@ export async function createAgentCompletion(
         body: JSON.stringify({
           model: DIRA_AGENT_MODEL,
           messages,
+          reasoning_effort: "low",
+          ...(tools.length === 0
+            ? { response_format: { type: "json_object" } }
+            : {}),
           ...(tools.length > 0
             ? {
                 tools: tools.map((tool) => ({
