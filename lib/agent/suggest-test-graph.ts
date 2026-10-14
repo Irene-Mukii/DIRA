@@ -11,6 +11,7 @@ import {
   DIRA_AGENT_MODEL,
   type AgentMessage,
 } from "@/lib/models";
+import { logAgentEvent } from "@/lib/agent/logger";
 import {
   prepareSuggestionEvidence,
   proposalFingerprint,
@@ -126,16 +127,38 @@ function stageLog(
 ): void {
   const write = status === "failed" ? console.error : console.info;
   write("Suggest Test graph stage", { run_id: runId, stage, status, ...details });
+  if (stage === "glm_generation") return;
+  void logAgentEvent({
+    run_id: runId,
+    workflow: "suggest_test",
+    event_type: "tool_event",
+    agent_action: stage,
+    tool_name:
+      typeof details.mcp_tool === "string" ? details.mcp_tool : stage,
+    status: status === "started"
+      ? "started"
+      : status === "failed"
+        ? "error"
+        : "success",
+    ...(typeof details.duration_ms === "number"
+      ? { duration_ms: details.duration_ms }
+      : {}),
+    ...(typeof details.error_name === "string"
+      ? { error: details.error_name }
+      : {}),
+    metadata: details,
+  });
 }
 
 async function createToolSession(
   context: SuggestTestContext,
+  runId: string,
 ): Promise<SuggestionToolSession> {
   const server = new McpServer(
     { name: "dira-suggest-test-workflow", version: "1.0.0" },
     { capabilities: {} },
   );
-  registerSuggestionWorkflowTools(server, async () => context);
+  registerSuggestionWorkflowTools(server, async () => context, runId);
 
   const client = new Client(
     { name: "dira-suggest-test-graph", version: "1.0.0" },
@@ -518,7 +541,11 @@ function createSuggestionGraph(tools: SuggestionToolSession) {
       ];
       let completion: Awaited<ReturnType<typeof createAgentCompletion>>;
       try {
-        completion = await createAgentCompletion(messages, []);
+        completion = await createAgentCompletion(messages, [], {
+          runId: state.runId,
+          workflow: "suggest_test",
+          attempt,
+        });
       } catch (error) {
         stageLog(state.runId, "glm_generation", "failed", {
           model: DIRA_AGENT_MODEL,
@@ -698,7 +725,29 @@ export async function runSuggestTestGraph(
   }
 
   const runId = randomUUID();
-  const tools = await createToolSession(context);
+  await logAgentEvent({
+    run_id: runId,
+    workflow: "suggest_test",
+    event_type: "run_started",
+    agent_action: "run_started",
+    tool_name: "suggest_test",
+    status: "started",
+  });
+  let tools: SuggestionToolSession;
+  try {
+    tools = await createToolSession(context, runId);
+  } catch (error) {
+    await logAgentEvent({
+      run_id: runId,
+      workflow: "suggest_test",
+      event_type: "run_finished",
+      agent_action: "run_finished",
+      tool_name: "suggest_test",
+      status: "error",
+      error: error instanceof Error ? error.name : "UnknownError",
+    });
+    throw error;
+  }
   try {
     const discovered = await tools.listTools();
     const required = [
@@ -721,22 +770,47 @@ export async function runSuggestTestGraph(
       context,
       supersedesTestId: options.supersedes_test_id ?? null,
     });
-    if (result.result) return result.result;
-    if (result.preparation && !result.preparation.ok) {
-      return result.preparation;
+    let finalResult: SuggestTestResult;
+    if (result.result) {
+      finalResult = result.result;
+    } else if (result.preparation && !result.preparation.ok) {
+      finalResult = result.preparation;
+    } else {
+      finalResult = {
+        ok: false,
+        status: "no_suitable_activity",
+        learner_id: learnerId,
+        message: "GLM could not produce a valid suggestion after the bounded retry.",
+        grouped_observations: result.preparation?.grouped_observations ?? [],
+        under_corroborated_signals:
+          result.preparation?.under_corroborated_signals ?? [],
+      };
     }
-    return {
-      ok: false,
-      status: "no_suitable_activity",
-      learner_id: learnerId,
-      message: "GLM could not produce a valid suggestion after the bounded retry.",
-      grouped_observations: result.preparation?.grouped_observations ?? [],
-      under_corroborated_signals:
-        result.preparation?.under_corroborated_signals ?? [],
-    };
+    await logAgentEvent({
+      run_id: runId,
+      workflow: "suggest_test",
+      event_type: "run_finished",
+      agent_action: "run_finished",
+      tool_name: "suggest_test",
+      status: "success",
+      metadata: {
+        result_status: finalResult.status,
+        succeeded: finalResult.ok,
+      },
+    });
+    return finalResult;
   } catch (error) {
     stageLog(runId, "workflow", "failed", {
       error_name: error instanceof Error ? error.name : "UnknownError",
+    });
+    await logAgentEvent({
+      run_id: runId,
+      workflow: "suggest_test",
+      event_type: "run_finished",
+      agent_action: "run_finished",
+      tool_name: "suggest_test",
+      status: "error",
+      error: error instanceof Error ? error.name : "UnknownError",
     });
     throw error;
   } finally {
