@@ -8,11 +8,20 @@ interface ActivityLog {
   id: string;
   run_id: string;
   timestamp: string;
+  event_type: string;
+  workflow: string | null;
   agent_action: string;
   tool_name: string;
   status: LogStatus;
   duration_ms: number | null;
   error: string | null;
+  provider: string | null;
+  model: string | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  cached_tokens: number | null;
+  cost_usd: string | null;
+  cost_status: "calculated" | "unknown" | "not_applicable" | null;
 }
 
 interface LogsResponse {
@@ -178,13 +187,15 @@ export default function AgentActivityLogs() {
 
         <div className="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
           <div className="overflow-x-auto">
-            <table className="min-w-[900px] w-full divide-y divide-gray-200 text-left text-sm dark:divide-gray-700">
+            <table className="min-w-[1200px] w-full divide-y divide-gray-200 text-left text-sm dark:divide-gray-700">
               <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500 dark:bg-gray-900/60 dark:text-gray-400">
                 <tr>
                   <th className="px-4 py-3">Timestamp</th>
                   <th className="px-4 py-3">Action / tool</th>
+                  <th className="px-4 py-3">Event</th>
                   <th className="px-4 py-3">Status</th>
                   <th className="px-4 py-3">Duration</th>
+                  <th className="px-4 py-3">Model usage / cost</th>
                   <th className="px-4 py-3">Run ID</th>
                   <th className="px-4 py-3">Error</th>
                 </tr>
@@ -192,7 +203,7 @@ export default function AgentActivityLogs() {
               <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
                 {!loading && !error && logs.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="px-4 py-12 text-center text-gray-500 dark:text-gray-400">
+                    <td colSpan={8} className="px-4 py-12 text-center text-gray-500 dark:text-gray-400">
                       No agent activity matches these filters.
                     </td>
                   </tr>
@@ -203,6 +214,12 @@ export default function AgentActivityLogs() {
                     <td className="px-4 py-3">
                       <div className="font-medium text-gray-900 dark:text-gray-100">{log.agent_action}</div>
                       <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">{log.tool_name}</div>
+                      {log.workflow && (
+                        <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">{log.workflow}</div>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-gray-700 dark:text-gray-300">
+                      {log.event_type}
                     </td>
                     <td className="px-4 py-3">
                       <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${statusStyles[log.status]}`}>
@@ -211,6 +228,24 @@ export default function AgentActivityLogs() {
                     </td>
                     <td className="whitespace-nowrap px-4 py-3 text-gray-600 dark:text-gray-300">
                       {log.duration_ms === null ? "—" : `${log.duration_ms} ms`}
+                    </td>
+                    <td className="px-4 py-3 text-gray-700 dark:text-gray-300">
+                      {log.model ? (
+                        <div>
+                          <div>{log.provider ? `${log.provider} / ` : ""}{log.model}</div>
+                          <div className="text-xs text-gray-500 dark:text-gray-400">
+                            {log.input_tokens ?? "?"} in / {log.output_tokens ?? "?"} out
+                            {log.cached_tokens !== null ? ` / ${log.cached_tokens} cached` : ""}
+                          </div>
+                          <div className="text-xs text-gray-500 dark:text-gray-400">
+                            {log.cost_status === "calculated" && log.cost_usd !== null
+                              ? `$${Number(log.cost_usd).toFixed(8)}`
+                              : log.cost_status === "unknown"
+                                ? "Cost unknown"
+                                : "—"}
+                          </div>
+                        </div>
+                      ) : "—"}
                     </td>
                     <td className="max-w-[220px] break-all px-4 py-3 font-mono text-xs text-gray-500 dark:text-gray-400">{log.run_id}</td>
                     <td className="max-w-sm whitespace-normal px-4 py-3 text-red-700 dark:text-red-300">{log.error || "—"}</td>
