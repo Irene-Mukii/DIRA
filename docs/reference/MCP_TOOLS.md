@@ -253,8 +253,24 @@ the UI.
 
 ### `retrieve_education_resources`
 
-Takes a bounded query string with no learner ID. Reuses
-`education-retrieval.ts` and the configured official domains:
+Takes a bounded query string with no learner ID:
+
+```json
+{"query":"structured classroom discussion"}
+```
+
+The structured result has top-level status `success`, `partial`,
+`no_relevant_results`, or `failed`, plus one `sources` item for each configured
+source. Each item includes `key`, `name`, the configured source `url`, `status`,
+`retrieved_at`, `title`, exact `page_url`, bounded `excerpt`, `error`,
+`http_status`, and `retrieval_duration_ms`; unavailable values are `null`.
+Source error categories include timeout, access restriction, HTTP/network
+failure, discovery failure, extraction failure, oversized content, unsupported
+content, and provider failure. A successful MCP `tools/call` does not mean the
+top-level retrieval status is successful or that any source returned content.
+
+The service and tool contract in `education-retrieval.ts` use the configured
+official domains:
 `https://www.ibo.org/`, `https://educationendowmentfoundation.org.uk/`,
 `https://montessori-ami.org/`, and `https://ies.ed.gov/ncee/wwc/`. Sitemap and
 page sizes, child sitemap count, candidate-page count, and request timeout are
@@ -262,6 +278,40 @@ bounded. Each source returns its own status, exact retrieved page (when
 successful), excerpt, error class, retrieval duration, and available HTTP
 status. The service does not claim that a live source was reached unless the
 request actually returned content.
+
+Fetch MCP is an optional backend behind this service, not a parallel retrieval
+pipeline. It is disabled unless `FETCH_MCP_ENABLED=true`; the default executable
+is `uvx`, overridable with `FETCH_MCP_COMMAND`. Dira launches the pinned
+`mcp-server-fetch==2026.10.10` over stdio. On Windows it sets
+`PYTHONIOENCODING=utf-8`. Dira retains source selection, domain/redirect
+validation, relevance ranking, bounded requests, result validation, and the
+existing public tool response. When Fetch MCP is enabled, before making source
+URL requests Dira searches up to 12 fresh cached Markdown pages per source for
+query terms and ranks matches using the same relevance scoring as live
+results. A relevant cached page is returned immediately, avoiding sitemap,
+robots, page, and Fetch MCP requests for that source. If no suitable cached
+page is found, or the cache search fails, the existing discovery and retrieval
+flow runs unchanged; individual discovered pages still use their exact-URL
+cache entry when available.
+
+Migration `db/009_agent_run_events_education_cache.sql` creates the
+`education_markdown_cache` PostgreSQL table and adds activity-event/model-cost
+columns. Cache identity is `(source_key, canonical_url, format_version)`;
+validated Markdown is limited to 128,000 UTF-8 bytes and fresh for 14 days from
+the last successful retrieval. Failed refreshes do not replace content or
+extend freshness. Expiry nulls the Markdown body but retains source, URL, hash,
+size, and timestamp metadata. Expired content is not a stale fallback; a failed
+Fetch refresh can still return Dira's independently validated direct-fetch
+result. Cache and provider outcomes are correlated with the workflow run ID
+when PostgreSQL activity logging is available.
+
+The optional provider has not demonstrated a latency improvement: the recorded
+controlled WWC comparison returned relevant direct content in about 1.25
+seconds and about 981 characters through Fetch MCP in about 3.16 seconds. In
+the 2026-10-14 external MCP smoke run, all four live sources failed (IB 403,
+EEF 404, AMI oversized, WWC extraction failure). Fetch does not bypass access
+restrictions or guarantee success. See `EVALS.md` and `README-INTEGRATION.md`
+for test statuses, setup, cache policy, failure handling, and troubleshooting.
 
 ### `persist_test_suggestion`
 
