@@ -1,5 +1,7 @@
 import "server-only";
 
+import { logAgentEvent } from "@/lib/agent/logger";
+
 export const DIRA_AGENT_MODEL = "glm-5.3-flash";
 const GLM_REQUEST_TIMEOUT_MS = 75_000;
 
@@ -31,6 +33,19 @@ export type AgentMessage =
 export interface AgentCompletion {
   content: string | null;
   toolCalls: AgentFunctionCall[];
+  usage: ModelUsage | null;
+}
+
+export interface ModelUsage {
+  inputTokens: number;
+  outputTokens: number;
+  cachedInputTokens: number;
+}
+
+export interface ModelCallContext {
+  runId: string;
+  workflow: string;
+  attempt?: number;
 }
 
 export class GlmConfigurationError extends Error {
@@ -86,6 +101,30 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function readTokenCount(value: unknown): number | null {
+  return Number.isSafeInteger(value) && typeof value === "number" && value >= 0
+    ? value
+    : null;
+}
+
+function parseUsage(value: unknown): ModelUsage | null {
+  if (!isRecord(value)) return null;
+  const inputTokens = readTokenCount(value.prompt_tokens);
+  const outputTokens = readTokenCount(value.completion_tokens);
+  if (inputTokens === null || outputTokens === null) return null;
+
+  const details = isRecord(value.prompt_tokens_details)
+    ? value.prompt_tokens_details
+    : null;
+  const cachedInputTokens =
+    readTokenCount(details?.cached_tokens) ??
+    readTokenCount(value.cached_tokens) ??
+    0;
+  if (cachedInputTokens > inputTokens) return null;
+
+  return { inputTokens, outputTokens, cachedInputTokens };
+}
+
 function parseCompletion(value: unknown): AgentCompletion {
   if (!isRecord(value) || !Array.isArray(value.choices)) {
     throw new GlmRequestError("GLM returned an invalid completion response");
@@ -128,10 +167,10 @@ function parseCompletion(value: unknown): AgentCompletion {
     throw new GlmRequestError("GLM returned neither a reply nor a tool call");
   }
 
-  return { content, toolCalls };
+  return { content, toolCalls, usage: parseUsage(value.usage) };
 }
 
-export async function createAgentCompletion(
+async function requestAgentCompletion(
   messages: AgentMessage[],
   tools: AgentFunctionTool[],
 ): Promise<AgentCompletion> {
@@ -206,4 +245,50 @@ export async function createAgentCompletion(
   }
 
   return parseCompletion(body);
+}
+
+export async function createAgentCompletion(
+  messages: AgentMessage[],
+  tools: AgentFunctionTool[],
+  context?: ModelCallContext,
+): Promise<AgentCompletion> {
+  const startedAt = Date.now();
+  try {
+    const completion = await requestAgentCompletion(messages, tools);
+    if (context) {
+      await logAgentEvent({
+        run_id: context.runId,
+        workflow: context.workflow,
+        attempt: context.attempt,
+        event_type: "model_call",
+        agent_action: "model_call",
+        tool_name: "glm.chat.completions",
+        status: "success",
+        provider: "z.ai",
+        model: DIRA_AGENT_MODEL,
+        usage: completion.usage,
+        duration_ms: Date.now() - startedAt,
+        metadata: { usage_available: completion.usage !== null },
+      });
+    }
+    return completion;
+  } catch (error) {
+    if (context) {
+      await logAgentEvent({
+        run_id: context.runId,
+        workflow: context.workflow,
+        attempt: context.attempt,
+        event_type: "model_call",
+        agent_action: "model_call",
+        tool_name: "glm.chat.completions",
+        status: "error",
+        provider: "z.ai",
+        model: DIRA_AGENT_MODEL,
+        cost_status: "unknown",
+        duration_ms: Date.now() - startedAt,
+        error: error instanceof Error ? error.name : "UnknownError",
+      });
+    }
+    throw error;
+  }
 }
