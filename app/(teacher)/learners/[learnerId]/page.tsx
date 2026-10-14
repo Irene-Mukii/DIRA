@@ -40,7 +40,7 @@ interface ApprovedTest {
   exploration_question: string | null;
   hypothesis: string | null;
   suggested_activity: string;
-  activity_date: Date;
+  activity_date: string;
   purpose: string | null;
   what_to_observe: string[];
 }
@@ -167,7 +167,7 @@ export default async function LearnerDetailPage({
     );
     const approvedTestsResult = await pool.query<ApprovedTest>(
       `SELECT t.test_id, t.exploration_question, t.hypothesis,
-              t.suggested_activity, t.activity_date, t.purpose,
+             t.suggested_activity, t.activity_date::text AS activity_date, t.purpose,
               t.what_to_observe
        FROM activity_tests t
        WHERE t.learner_id = $1

@@ -9,7 +9,7 @@ interface ApprovedTest {
   exploration_question: string | null;
   hypothesis: string | null;
   suggested_activity: string;
-  activity_date: Date | string;
+  activity_date: string;
   purpose: string | null;
   what_to_observe: string[];
 }
@@ -30,8 +30,9 @@ function localDateValue(): string {
   ].join("-");
 }
 
-function formatDate(value: Date | string): string {
-  return new Date(value).toLocaleDateString();
+function formatDate(value: string): string {
+  const [year, month, day] = value.split("-");
+  return `${day}/${month}/${year}`;
 }
 
 export default function ApprovedTests({

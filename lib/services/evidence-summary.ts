@@ -37,7 +37,7 @@ export interface EvidenceTest {
     observation_type: string;
     original_observation: string;
     reviewed_observation: string | null;
-    observed_at: Date;
+    observed_at: string;
     teacher_id: string;
     teacher_review_status: string;
     citation_role: "supporting" | "contradicting" | "context";
