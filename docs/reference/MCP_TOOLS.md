@@ -5,10 +5,14 @@
 ## 1. MCP architecture
 
 Dira exposes a Dira-owned, stateless Streamable HTTP MCP server at
-`POST /api/mcp/server`, implemented with the official MCP TypeScript SDK. It uses a
-server-side bearer token and is intentionally a single-teacher demo surface, not
-production user authentication. Verify discovery and invocation with an MCP
-client/Inspector after configuring the URL and token.
+`/api/mcp/server`, implemented with the official MCP TypeScript SDK. The route
+uses a server-side bearer token and is intentionally a single-teacher demo
+surface, not production user authentication: the token does not identify an
+individual teacher, and the server resolves a deterministic demo teacher from
+the database.
+An independent MCP client can use this endpoint with the configured bearer
+token; the local in-memory registration test does not verify an external
+client's HTTP discovery or invocation.
 
 The server currently registers **13 Dira-owned tools**. The Suggest Test API and
 the public high-level `suggest_test` tool both enter the same LangGraph.js
@@ -17,6 +21,12 @@ official SDK's in-process `InMemoryTransport`; it does not recursively call
 `suggest_test` or loop back through HTTP. The same supporting capabilities are
 also registered on the public Dira MCP server. Internal service functions and
 graph nodes are not counted as MCP tools.
+
+There is a second, separate server entry point: `npm run mcp:server` starts a
+stdio MCP server that currently registers only `log_observation`. Its tool
+contract and result differ from the 13-tool HTTP endpoint, and it selects the
+oldest teacher row as context rather than authenticating a caller. Do not
+describe the stdio entry point as the same 13-tool server.
 
 The scheduled Dira agent is a separate component: a hosting scheduler calls the
 protected `POST /api/internal/follow-up-agent` trigger route, which wakes the
@@ -27,26 +37,38 @@ and due-inspection tools; for due dispatch it may inspect and dispatch one job.
 from scheduled runs so the agent cannot invent teacher remarks. The scheduler
 trigger endpoint exists; no hosting scheduler is configured by the repository.
 
-Dira must also use a borrowed server to satisfy the external-MCP requirement. **Keeper.sh** is the selected third-party calendar MCP server. `lib/agent/mcp-client.ts` now uses the official MCP SDK with Streamable HTTP transport and requires a caller-supplied OAuth client provider. `lib/external-mcp/calendar.ts` discovers tools and only invokes discovered tools marked read-only for its bounded count/event helpers. OAuth callback handling, secure token persistence, teacher-to-calendar authorization, and a live authenticated tool invocation are not yet implemented. Do not treat the client foundation as end-to-end verification.
+**Keeper.sh** is the selected third-party calendar MCP server intended to meet
+the external-MCP requirement. `lib/agent/mcp-client.ts` uses the official MCP
+SDK with Streamable HTTP transport and requires a caller-supplied OAuth client
+provider. `lib/external-mcp/calendar.ts` defines discovery and bounded
+read-only helper functions. OAuth callback handling, secure token persistence,
+teacher-to-calendar authorization, an application call site, and a live
+authenticated tool invocation are not implemented. Do not treat the client
+foundation as end-to-end verification.
+
+As of the current audit, no application call site invokes the Keeper calendar
+helpers. The `mcp-client.ts` call sites connect to Dira's own MCP endpoint for
+scheduled and call-transcript workflows; that is not a Keeper connection.
+Accordingly, Keeper is selected but not integrated into a running workflow.
 
 ## 2. Tool inventory
 
-| Tool name | Ownership | Purpose | State-changing? |
+| Tool name | Input | Success result | Side effect and boundary |
 |---|---|---|---|
-| `log_observation` | Dira-owned | Validate and persist a teacher observation with provenance | Yes; creates observation |
-| `suggest_test` | Dira-owned | Start LangGraph.js; retrieve evidence/history/resources, call GLM-5.3, validate, and persist a proposal | Yes; creates one `SUGGESTED` row |
-| `get_learner_observations` | Dira-owned | Return observations and class context for a learner authorized to the trusted teacher | No; read-only |
-| `get_previous_suggestions` | Dira-owned | Return authorized prior proposals, test statuses, linked evidence, and recorded rejection reasons where available | No; read-only |
-| `retrieve_education_resources` | Dira-owned | Discover bounded relevant content on the configured IB, EEF, AMI, and WWC official domains | No; external requests are bounded and per-source status is returned |
-| `persist_test_suggestion` | Dira-owned | Revalidate proposal shape, learner/evidence authorization, and submission idempotency, then save status `SUGGESTED` | Yes; creates one test and its evidence links |
-| `regenerate_test_suggestion` | Dira-owned | Validate the prior proposal, include previous suggestions/history in the model context, and create a linked replacement | Yes; saves a replacement `SUGGESTED` row |
-| `accept_suggested_test` | Dira-owned | Validate the planned date and update the selected persisted suggestion to `ACCEPTED` | Yes; transitions the existing row |
-| `build_evidence_summary` | Dira-owned | Read saved tests, citations, external-source outcomes, and teacher-recorded outcomes | No; read-only |
-| `prepare_daily_follow_up_queue` | Dira-owned MCP tool | Queue eligible schedule rows for the deterministic demo teacher and school; creates jobs only | Yes; idempotent database queue preparation |
-| `list_due_follow_ups` | Dira-owned MCP tool | List due queued jobs for the deterministic demo teacher | No; read-only candidate listing |
-| `dispatch_one_due_follow_up` | Dira-owned MCP tool | Request dispatch of at most one due job after server-side checks | Yes; guarded, atomic call attempt |
-| `save_call_observation_drafts` | Dira-owned MCP tool | Save quoted call-transcript segments as unconfirmed observation drafts | Yes; idempotent draft writes |
-| Keeper tools such as `list_calendars` / `get_events` where exposed | Borrowed external server | Retrieve authorised calendar context via MCP | Provider/tool-dependent; request only minimal read access for MVP |
+| `log_observation` | Learner ID, observation type, original text, observed time and submission ID; optional calendar, subject, term, context and accepted-test link | Observation ID, duplicate flag and review status | Inserts once by submission ID; validates enrollment and linked records using the server-resolved demo teacher |
+| `suggest_test` | Learner ID and submission ID | Suggest Test result; valid output is persisted as `SUGGESTED` | Starts the bounded LangGraph workflow; requires a server-resolved demo context |
+| `get_learner_observations` | Learner ID | Grade/stream context and observation records | Read-only; class scope is derived from the server-resolved demo teacher |
+| `get_previous_suggestions` | Learner ID | Prior suggestions, statuses and linked evidence IDs | Read-only; learner scope is derived server-side |
+| `retrieve_education_resources` | Bounded query string | Overall status and one result per configured source, including source status/error metadata | Read-only to Dira data; makes bounded requests to approved education domains, optionally through Fetch MCP |
+| `persist_test_suggestion` | Learner ID, submission ID, validated suggestion; optional superseded test ID | Persisted proposal/result | Writes a `SUGGESTED` test and evidence links after server-side ownership and submission checks |
+| `regenerate_test_suggestion` | Learner ID, submission ID, proposal hash; optional superseded test ID | Replacement suggestion/result | Runs the workflow again and persists a linked `SUGGESTED` row |
+| `accept_suggested_test` | Learner ID, submission ID, proposal hash and planned date; optional superseded test ID | Accepted test result | Transitions the selected persisted proposal to `ACCEPTED`; no authenticated human principal is established by the shared bearer token |
+| `build_evidence_summary` | Learner ID | Current saved tests, citations, retrieval outcomes and teacher-recorded outcomes | Read-only; selected learner is scoped to the demo teacher |
+| `prepare_daily_follow_up_queue` | No arguments | Queue-preparation counts/status | Creates or refreshes eligible follow-up jobs; never places a call |
+| `list_due_follow_ups` | Optional integer `limit` from 1 to 20 (default 10) | `{items, count}` | Read-only list for the demo teacher; dispatch rechecks eligibility |
+| `dispatch_one_due_follow_up` | No arguments | Result for at most one call attempt | State-changing and potentially chargeable; blocked in production demo mode and guarded by server-side eligibility/claim checks |
+| `save_call_observation_drafts` | Recording UUID and 1–30 quoted segments (text required; spoken name and observation type optional) | Draft-save result | Writes unconfirmed review drafts; the server checks the recording and resolves learner matches |
+| Keeper tools such as `get_event_count` / `get_events` | Provider-specific bounded date range | Provider-specific calendar result | Borrowed server, not included in Dira's 13; **not currently invoked by an application workflow** |
 
 The first 13 rows are the exact Dira-owned registration inventory. Keeper is a
 separate borrowed server and is not included in that count. Suggestion and
@@ -75,53 +97,57 @@ development/demo resolver, not production authentication.
 
 Preserve the teacher's original observation and source details as a durable evidence record. This tool does not infer, summarise, diagnose, or evaluate the learner.
 
-### Proposed input schema
+### Registered HTTP input schema
 
 ```json
 {
-  "learner_id": "string, required",
+  "learner_id": "non-empty string, required; max 200 characters",
   "observation_type": "participation | academic | behavioral | attendance | extracurricular | test_result | other",
-  "content": "string, required; teacher's observation in original wording",
+  "content": "non-empty string, required; max 20000 characters",
+  "observed_at": "parseable date string, required",
+  "submission_id": "non-empty string, required",
+  "calendar_entry_id": "string, optional",
   "subject": "string, optional",
-  "term": "string, optional when the application can determine it",
-  "observed_at": "ISO-8601 datetime, required",
-  "linked_test_id": "string or null, optional",
+  "term": "string, optional",
   "activity_context": "string, optional",
-  "submission_id": "string, required for idempotent submission handling"
+  "linked_test_id": "string, optional"
 }
 ```
 
 The MCP tool currently accepts text observations only and assigns the `text`
 capture method server-side. `teacher_id`, `school_id`, and capture provenance are
-not accepted as tool arguments. This single-teacher demo context is not identity
-verification; production voice observations require the later authenticated
-teacher and verified transcription flow.
+not accepted as tool arguments. The HTTP tool returns the persisted observation
+ID, duplicate flag, and teacher-review status, not the full observation row.
+This single-teacher demo context is not identity verification.
 
 ### Validation and processing
 
-1. Authenticate the caller and verify authority to record for `learner_id`.
-2. Confirm that the learner exists in the authorised school/context.
-3. Validate required fields, enum values, string limits, timestamps and any `linked_test_id`.
-4. Check transcription-review requirements for voice submissions; request clarification on critical uncertainty.
-5. Apply idempotency using `submission_id` and provider recording/call identifiers when available.
-6. Preserve raw/original observation content and provenance; do not overwrite it with a model rewrite.
-7. Persist to PostgreSQL.
-8. Confirm the write and return the real record identifier.
+1. Zod validates the registered HTTP arguments, including required fields,
+   enums, string bounds, and a `Date.parse`-compatible `observed_at`.
+2. The server resolves the demo teacher and school; the MCP caller is not
+   individually authenticated.
+3. `logObservation` validates the teacher/school row, learner enrollment at the
+   observation date, optional calendar-entry scope, and optional linked-test
+   ownership and accepted status.
+4. The server sets `capture_method` to `text`. The original text and
+   `submission_id` are saved transactionally; identical repeated submissions
+   return the existing record, while a reused ID with different content is
+   rejected.
+5. Success is returned only after the transaction commits.
 
-### Proposed output
+### Registered HTTP output
 
 ```json
 {
-  "ok": true,
   "observation_id": "real persisted ID",
-  "learner_id": "verified learner ID",
-  "created_at": "ISO-8601 datetime",
-  "status": "saved",
-  "duplicate_of": null
+  "duplicate": false,
+  "teacher_review_status": "not_required"
 }
 ```
 
-A duplicate retry should return the existing submission/observation result where possible rather than creating another record. Validation or provider failures return a structured failure with a safe `code`, short `message`, and retry/clarification hint.
+Validation or persistence errors are returned using the MCP tool error
+contract. The separate stdio server currently has different arguments and
+returns the full observation object; it is not the HTTP contract above.
 
 ### Invariants
 

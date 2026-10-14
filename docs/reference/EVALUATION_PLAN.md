@@ -104,6 +104,11 @@ completed/recording outcomes remain explicitly unavailable.
 **Arrange:** Include observations that appear to support and contradict the same tentative question.  
 **Assert:** Both types are cited or surfaced; the model does not cherry-pick supportive evidence; the next step, if any, explores the variation rather than resolving it artificially.
 
+**Synthetic fixture:** Learner `L003` has `OBS_DEMO_L003_SUGGEST_01`
+(participation in a small-group puzzle) and `OBS_DEMO_L003_SUGGEST_02`
+(did not contribute during pair planning). The linked test relationship rows label
+these citations `supporting` and `contradicting`, respectively.
+
 ### EVAL-09 — Citation integrity
 
 **Arrange:** Supply a known evidence set; optionally inject a fabricated ID, an ID from another learner, and a real but irrelevant ID.  
@@ -121,6 +126,11 @@ completed/recording outcomes remain explicitly unavailable.
 **Act:** Accept it without logging a result, then separately log a teacher observation with `linked_test_id`.  
 **Assert:** It remains incomplete after acceptance. After the linked outcome is saved, Dira can reconstruct `question → test → outcome observation`; the Evidence Card reflects that result only after it is recorded.
 
+**Synthetic fixtures:** `TEST_DEMO_L003_SUGGESTED` is a suggestion with no
+outcome; `TEST_DEMO_L003_COMPLETED` links to
+`OBS_DEMO_L003_OUTCOME_01`. Use a disposable copy when exercising state
+transitions so the baseline fixtures remain unchanged.
+
 ### EVAL-14 — Evidence Card grounding
 
 **Arrange:** Use a learner with multiple questions, tests, linked observations, gaps and at least one contradiction.  
@@ -134,6 +144,9 @@ summary requests.
 **Assert:** The summary is generated from the server-assembled package, its claim
 references are a subset of supplied record IDs, loading/error/retry states render,
 and duplicate in-flight calls result in one GLM request.
+
+**Synthetic fixture:** `L003` has both conflicting source observations and a
+completed test outcome for summary/citation grounding.
 
 ### EVAL-32–37 — On-demand, versioned hypothesis assessment
 

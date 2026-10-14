@@ -1,19 +1,19 @@
 # Dira — Integrations
 
-> **Important:** Selected, configured, tested and working are different states. The source pack does not prove that any third-party integration currently works. Record test date, environment, and result before promoting a status.
+> **Important:** Selected, configured, tested and working are different states. Statuses below reflect repository evidence and the 2026-10-14 audit; they do not certify production operation.
 
 ## 1. Integration overview
 
-| Integration | Intended use | Interface classification | Current status in architecture | Verification needed |
-|---|---|---|---|---|
-| GLM-5.3 hosted API | Reasoning for test suggestions and Evidence Card language | Ordinary model API | Selected in revised architecture; provider/API details to confirm | Credentials, model ID, endpoint, latency, errors, token/cost limits |
-| PostgreSQL | Durable learner, observation, test, outcome and related records | Database connection from server-side code | Core storage choice | Schema/migrations, constraints, persistence, backups/dev resets |
-| OpenAI Audio Transcriptions | Transcribe completed phone-call recordings for the MVP | Ordinary HTTPS API; not MCP | Implemented as an MVP integration; sends audio outside DIRA-controlled infrastructure | API key, account access, supported recording format and operational/data-handling review |
-| Africa's Talking SMS | Weekly focus reminders/notifications | Ordinary API unless a separate MCP server is truly used | Selected provider | Credentials, sender/short-code requirements, delivery status/callbacks, Kenya account permissions |
-| Africa's Talking Voice | Outbound teacher follow-up call | Ordinary server-side voice API; not MCP | Request adapter, non-production demo-gated dispatcher, and teacher-scoped development status view implemented; no live call verified | Account credentials, caller ID, sandbox/live behavior, provider callbacks/status authentication, recording/audio retrieval, account restrictions and teacher consent |
-| Keeper.sh calendar MCP | Unified calendar context for follow-up | **Borrowed external MCP server** | Selected/planned; not complete until actual call succeeds | OAuth 2.1 flow for hosted endpoint, Streamable HTTP transport, MCP discovery/invocation, limits and returned event data |
-| Educational-source retrieval | Fast relevant lookup before every test suggestion | Separate retrieval/search adapter; not automatically MCP | Required behaviour; exact provider/adapter remains to be selected and tested | Source coverage, citations, timeout, cancellation, empty results, query privacy, reliability |
-| Google Cloud Run | Intended app deployment target from the shared plan | Hosting/platform service | Target in shared planning document; confirm actual deploy | Clean clone/build/start, environment secrets, health/readiness, smoke test |
+| Integration | Interface | Current implementation and verification status |
+|---|---|---|
+| GLM-5.3 Flash via Z.AI | Hosted model API, not MCP | `lib/models.ts` sends requests with timeout/error handling and captures usage when returned. Mocked request/usage and cost tests passed; no live request or provider billing comparison was made. |
+| PostgreSQL | Server-side database | Used by persistence, audit and cache services. The focused suite uses mocks; database-backed tests and run reconstruction were not executed in this audit. |
+| OpenAI Audio Transcriptions | Hosted HTTPS API, not MCP | Transcription client and call-recording path are implemented. No live account request was made; this remains an MVP privacy exception requiring review before go-live. |
+| Africa's Talking SMS | Hosted API, not MCP | Not implemented in the current application path. `lib/external-mcp/sms.ts` contains only a comment and there is no SMS call site. |
+| Africa's Talking Voice | Hosted API/SDK, not MCP | Request, queue, callback, recording and transcript-processing code exists; mocked demo/config tests passed. No live call, callback or recording download was verified. Calls can be chargeable. |
+| Keeper.sh calendar | Borrowed external MCP server | Endpoint/client/helper code exists, but the calendar helpers have no application call site and no OAuth-backed invocation is configured. The borrowed-MCP requirement is not met. |
+| Education-source retrieval | Dira service: direct HTTPS plus optional Fetch MCP | Bounded direct retrieval is implemented; Fetch MCP is an optional stdio backend, disabled by default. Mocked retrieval/cache tests passed; no live source or Fetch MCP request was made. |
+| Deployment/hosting | Platform | No hosting deployment was verified in this audit. A planning document's provider choice is not evidence of an operational deployment. |
 
 ## 2. Keeper.sh — borrowed calendar MCP (selected)
 
@@ -41,7 +41,13 @@ Keeper.sh is selected to provide calendar functionality through an existing thir
 7. Add a test log showing date, tool discovered, call completed, safe result shape and any limitation. Remove tokens and personal calendar details from logs.
 8. The Keeper repository currently documents hosted OAuth 2.1 and a free-plan cap of 25 combined API/MCP requests per day. Recheck the hosted terms and limits before demo. If insufficient, explicitly decide whether self-hosting is feasible rather than silently bypassing MCP.
 
-**Current status:** the SDK transport, endpoint configuration, tool discovery, and guarded read-only adapter are implemented. A live authenticated Keeper call is **blocked/unverified** until a non-sensitive test calendar is authorized through OAuth and Dira has a secure provider for that OAuth session. The borrowed-MCP requirement is not met by adding a Keeper URL to the docs; it is met by an actual Dira-client connection and real tool invocation.
+**Current status:** generic SDK transport and calendar helper code are present,
+but a repository-wide call-site check found no application workflow that
+invokes the Keeper helpers. Dira also has no configured OAuth provider/token
+persistence for a teacher's calendar. No live discovery or call was made.
+Keeper is therefore **selected but not integrated**, and the borrowed-MCP
+requirement remains unmet until an authenticated invocation is implemented and
+demonstrated.
 
 ### Correct use in Dira
 
@@ -49,24 +55,34 @@ Calendar event/time data may inform the timing of follow-ups or weekly planning.
 
 ## 3. Educational-source retrieval
 
-### Required runtime behaviour
+The implementation is in `lib/services/education-retrieval.ts`, behind the
+Dira-owned `retrieve_education_resources` MCP tool. It performs bounded direct
+HTTPS retrieval from configured IB, EEF, AMI and WWC domains, validates allowed
+domains and redirects, bounds response sizes and page counts, and returns
+per-source status/error metadata. The Suggest Test graph requests retrieval
+only after it has enough eligible learner evidence to proceed. Learner names
+and observation text are not part of the query.
 
-Before finalising each `suggest_test`, make a bounded external retrieval attempt for guidance relevant to the classroom question and context. The shared planning document discusses IB, EEF, AMI and WWC; the architecture also mentions IBEF. Confirm the intended source list with the product owner so “IB” versus “IBEF” is not silently conflated. For now, source configuration should be explicit and only sources actually queried may be cited.
+The optional `lib/services/fetch-mcp.ts` adapter connects through the official
+MCP SDK over stdio and starts the pinned Fetch MCP package when
+`FETCH_MCP_ENABLED=true`; it is disabled by default. PostgreSQL Markdown cache
+entries are size-validated, keyed by source and canonical URL, and fresh for
+14 days. A failed Fetch refresh can fall back to Dira's validated direct
+result; it must not extend cache freshness. Fetch connection/request timeouts
+are 8 seconds; direct source requests use a 3.5-second timeout. These are
+implementation constants, not a configurable retrieval SLA.
 
-Do not assume GLM-5.3 has browsing capability. Choose and verify a separate API/retrieval service or an appropriate existing server. This adapter is not assumed to be MCP unless the team connects to a genuine MCP server for retrieval.
+**Verification status:** focused mocked tests for source validation,
+source-specific failure, Fetch fallback, cache freshness, size and hashes
+passed. The opt-in Fetch MCP/PostgreSQL integration test was skipped, and no
+live source request was made during this audit. Existing EVALS text records a
+previous live retrieval report, but its raw command output was not retained in
+the repository and it was not repeated; treat those reported source failures
+as unverified historical evidence.
 
-### Timeout and fallback
-
-- Make the timeout configurable; a few seconds is a starting point, not a final SLA.
-- Cancel requests where supported and avoid uncontrolled retries.
-- Track statuses such as `success`, `no_relevant_results`, `timeout`, `provider_error`, and `not_configured`.
-- If results are returned, include only relevant short excerpts and actual source identifiers/URLs in the prompt/output.
-- If the lookup fails or times out, continue with the learner's persisted evidence and model knowledge; state that external guidance was unavailable for the run and provide no invented source citation.
-- Avoid sending learner names or unnecessary identifiers. Query the educational issue/context, not a child's identity.
-
-### Deferred persistence
-
-Do not create a dedicated PostgreSQL table for the educational-source catalogue/content in the current scope. The system should query externally at suggestion time. A future scope addition may store source metadata, canonical URL, publisher/title, publication/update date, retrieval timestamp, short excerpt or content pointer, licence/usage notes and search indexes after a separate data-model decision.
+This retrieval integration is distinct from the borrowed Keeper calendar MCP.
+It does not by itself satisfy a requirement to connect to a third-party
+calendar MCP server.
 
 ## 4. Speech-to-text (MVP: OpenAI; replace before go-live)
 
@@ -84,7 +100,12 @@ An OpenAI timeout/unavailability must not produce a fake transcript or a saved o
 
 ## 5. Africa's Talking SMS
 
-Use the SMS API for short teacher-focused reminders if enabled. The message should not contain a detailed learner profile or disclose sensitive learner data unnecessarily. Do not show delivery success until the provider response or appropriate delivery callback supports that status. Keep provider request IDs and outcomes in safe operational logs.
+SMS is not implemented in the current application path. The
+`lib/external-mcp/sms.ts` file contains only a comment and no call site sends
+messages. If SMS is added later, use the ordinary Africa's Talking API unless
+a specific MCP server is independently verified; keep messages short and do
+not show delivery success without the provider's response or a delivery
+callback.
 
 ## 6. Africa's Talking outbound Voice
 
@@ -174,7 +195,14 @@ Use PostgreSQL as the system of record for learner context, teacher/observer con
 
 ## 8. Hosted GLM model
 
-Keep the model provider behind `lib/models.ts`. Confirm the actual endpoint, model identifier, key, supported input/output modes and limits from the selected provider account. Enforce output validation in Dira code; model prompts are not a security boundary. Never assume external source access is included in the model API unless explicitly documented and verified.
+`lib/models.ts` calls the Z.AI chat-completions API using the server-side
+`ZAI_API_KEY` and `glm-5.3-flash` model identifier. Requests have a 75-second
+timeout and validate the returned completion/tool-call shape; Suggest Test and
+Evidence Card services apply their own output and evidence-reference checks.
+Mocked tests verified request options, token extraction, network-error
+reporting, and cost calculation. No live provider request, account/quota check,
+or invoice comparison was performed during this audit. Do not assume the model
+provides web search or browsing.
 
 The shared planning PDF discusses an open-weight model for a real task, but the revised architecture names GLM-5.3 and does not specify an open-weight secondary model. Confirm the judging requirement and model choice with the team; do not claim an open-weight model is integrated until logs show it actually executed and influenced application output.
 

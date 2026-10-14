@@ -27,6 +27,7 @@ evidence over time. DIRA suggests; the teacher decides.
 - [Business model](#business-model)
 - [Future improvements](#future-improvements)
 - [Contributing and project references](#contributing-and-project-references)
+- USE LEARNER L003 - JAMES KIPCHOGE SYNTHETIC DATA TO TEST THE SUGGEST TEST FLOW (MEETS CRITERIA FOR SUGGESTING TEST)
 
 ## The problem
 
@@ -348,13 +349,52 @@ Generate, clean, and import synthetic records if the database does not already
 contain demo learners:
 
 ```powershell
-py -3 scripts/generate_synthetic_data.py --include-teacher-reviews
-py -3 scripts/clean_dataset.py
-npm run db:seed:dev
+py -3 scripts/generate_synthetic_data.py --include-teacher-reviews --output-dir data/generated_day2
+py -3 scripts/clean_dataset.py --input-dir data/generated_day2 --output-dir data/cleaned/generated_day2
 ```
 
-These scripts create demo data; use them only with the isolated local database.
-The importer has development-database safeguards. Then start the application:
+The generated data includes deterministic L003 contradictory observations, a
+`SUGGESTED` activity test, and a completed test with a linked outcome. It also
+adds Amani to ordinary and exact-match first-name coverage. The cleaner validates
+references and preserves the aligned supporting/contradicting evidence roles.
+
+For an isolated local database, run:
+
+```powershell
+npm run db:seed:dev -- --input-dir=data/cleaned/generated_day2
+```
+
+For a Supabase evaluation target, create a **separate staging project** and apply
+the schema and all required migrations before import. Never use the database URL
+configured for the live Vercel deployment. Put only the staging connection URL
+and project reference in ignored local `.env.local`:
+
+```text
+DIRA_STAGING_PROJECT_REF=<20-character Supabase project reference>
+DIRA_STAGING_DATABASE_URL=<staging transaction-pooler URI with sslmode=require>
+```
+
+The staging importer accepts only the project's transaction pooler on port 6543
+and requires the project reference to match the URL username and your explicit
+confirmation. First validate the target configuration and dataset without
+connecting to the database:
+
+```powershell
+npm run db:seed:staging -- --confirm-staging=<project-reference> --input-dir=data/cleaned/generated_day2 --check-only
+```
+
+Review the target and row counts, then run the same command without
+`--check-only` to import. The importer uses one transaction and preserves
+activity-test and teacher-review relationship rows. It refuses to write unless
+all synthetic-data tables are empty; it never truncates tables. Use a fresh,
+dedicated staging project for a new import rather than pointing this workflow at
+production or clearing a populated database. Keep the importer-only
+`DIRA_STAGING_*` values local; never configure them in Vercel. To view the staged
+data in a hosted app, use a separate Vercel Preview deployment and set that
+Preview environment's `DATABASE_URL` to the staging project. Keep Production
+`DATABASE_URL` pointed at the production project.
+
+Then start the local application:
 
 ```powershell
 npm run dev
@@ -379,6 +419,7 @@ values in ignored `.env.local`. The principal settings are:
 | `FOLLOW_UP_SCHEDULER_SECRET` | Protects internal follow-up triggers | Required if an operator configures an external scheduler. |
 | `AFRICASTALKING_USERNAME_VOICE`, `AFRICASTALKING_API_KEY_VOICE`, `AFRICASTALKING_VOICE_FROM`, `VOICE_CALLBACK_SECRET`, `DIRA_PUBLIC_BASE_URL` | Optional Africa's Talking Voice setup | Requires provider credentials, reachable callbacks, consent/configuration, and a safe demo destination. Live provider calls have not been verified. |
 | `OPENAI_API_KEY`, `OPENAI_STT_MODEL` | MVP phone-call recording transcription path | Sends recording audio to OpenAI; review privacy/security before any real deployment. This does not enable the disabled in-app microphone. |
+| `DIRA_STAGING_PROJECT_REF`, `DIRA_STAGING_DATABASE_URL` | Local-only Supabase synthetic-data importer | Keep only in ignored `.env.local`; never configure these in Vercel. |
 
 The application also has a phone follow-up queue/dispatch and call-recording
 callback implementation. Provider credentials and callbacks are not part of

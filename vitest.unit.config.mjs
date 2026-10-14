@@ -23,6 +23,7 @@ export default defineConfig({
       "tests/internal-demo-voice-route.test.mjs",
       "tests/public-demo-voice.test.mjs",
       "tests/demo-call-route.test.mjs",
+      "tests/seed-staging-import.test.mjs",
       "tests/suggest-test.test.mjs",
       "tests/suggest-test-graph.test.mjs",
     ],

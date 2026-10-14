@@ -1,6 +1,8 @@
 # Dira — User Flows
 
 > **Current flow authority:** `ARCHITECTURE_Dira_Revised.md`. The shared planning PDF contains an older pathway-note/approval/guardian sequence. That sequence is superseded for this MVP. The current end state is a teacher-facing Learner Evidence Card and the teacher deciding what to explore next.
+>
+> **Implementation boundary:** The flows describe the intended teacher experience, not production authentication. Current server-side flows resolve a single demo teacher from PostgreSQL; the shared MCP bearer token does not authenticate an individual teacher. The Keeper calendar flow below is planned and is not currently connected to follow-up execution.
 
 ## 1. Main journey
 
@@ -147,7 +149,13 @@ The card is not a pathway recommendation and has no required guardian delivery o
 
 ## 9. Flow H — Calendar-aware follow-up
 
-Keeper.sh is the selected borrowed calendar MCP server. A scheduled job, provider event, or other explicit trigger—not a continuously running model—initiates the relevant workflow. Dira's MCP client connects to Keeper using the server's required transport/authentication and requests only the minimum schedule context needed.
+The intended design is to use Keeper.sh as the borrowed calendar MCP server for
+bounded timing context. This is not the current follow-up execution path:
+`lib/services/follow-up-queue.ts` reads schedule rows from Dira's PostgreSQL
+`school_calendar`, and a repository-wide call-site check found no invocation of
+the Keeper calendar helpers. No Keeper authentication or event result is
+currently part of the scheduled workflow. Treat this flow as planned until an
+authenticated Keeper tool call is integrated and verified.
 
 Calendar information may tell Dira when a follow-up could be due. It does not confirm that a lesson actually happened, which learners were present, or what they did. Any resulting observation must be supplied and confirmed through the teacher capture flow.
 

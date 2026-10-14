@@ -86,6 +86,7 @@ KENYAN_FIRST_NAMES = (
     "Dominic", "Dom", "Joan", "Jo", "Felix", "Fel", "Rebecca", "Becky",
     "Gabriel", "Gabe", "Susan", "Sue", "Raphael", "Raph", "Diana", "Diane",
     "Bernard", "Bernie", "Anthony", "Tony", "Benjamin", "Ben", "Emmanuel", "Emma",
+    "Amani",
     "Mark", "Marco", "Luke", "Lucas", "Matthew", "Matt", "Philip", "Phil",
     "Simon", "Sim", "Mark", "Mark", "Luke", "Lucas", "Matthew", "Matt",
     "Philip", "Phil", "Simon", "Sim"
@@ -249,7 +250,7 @@ SIMILAR_NAME_PAIRS = [
     ("Simon", "Sim"),
 ]
 
-EXACT_MATCH_FIRST_NAMES = ("James", "Peter", "David", "John")
+EXACT_MATCH_FIRST_NAMES = ("James", "Peter", "David", "John", "Amani")
 
 def make_learners(count: int, streams_per_grade: int) -> tuple[list[dict], list[dict]]:
     learners = []
@@ -268,6 +269,7 @@ def make_learners(count: int, streams_per_grade: int) -> tuple[list[dict], list[
     exact_match_indices = set()
     exact_match_start = max(similar_name_indices) + 1 if similar_name_indices else 0
     max_exact_pairs = min(len(EXACT_MATCH_FIRST_NAMES), (count - exact_match_start) // 2)
+    ordinary_name_demo_index = exact_match_start + max_exact_pairs * 2
     for i in range(exact_match_start, min(count, exact_match_start + max_exact_pairs * 2), 2):
         exact_match_indices.add(i)
         if i + 1 < count:
@@ -291,6 +293,8 @@ def make_learners(count: int, streams_per_grade: int) -> tuple[list[dict], list[
                 first_name = EXACT_MATCH_FIRST_NAMES[pair_number]
             else:
                 first_name = rng.choice(KENYAN_FIRST_NAMES)
+        elif index == ordinary_name_demo_index:
+            first_name = "Amani"
         elif index in similar_name_indices and index + 1 < count:
             pair_idx = (index // 2) % len(SIMILAR_NAME_PAIRS)
             first_name_1, first_name_2 = SIMILAR_NAME_PAIRS[pair_idx]
@@ -581,7 +585,7 @@ def make_observations(
                 demo_sessions,
                 (
                     "Synthetic demo: L003 offered an idea during a small-group puzzle.",
-                    "Synthetic demo: L003 added a suggestion during pair planning.",
+                    "Synthetic demo: During pair planning, L003 did not offer an idea after an invitation and watched the group complete the plan.",
                 ),
                 ("Synthetic small-group puzzle", "Synthetic pair planning"),
                 strict=True,
@@ -607,6 +611,9 @@ def make_observations(
                 }
             )
             rows.append(observation)
+            learner_observation_ids.setdefault(
+                (l003_enrollment["learner_id"], l003_enrollment["class_id"]), []
+            ).append(observation_id)
     return rows, learner_observation_ids
 
 
@@ -664,6 +671,9 @@ def make_tests(
                     "test_id": test_id,
                     "learner_id": learner_id,
                     "trigger_observation_ids": ", ".join(trigger_ids),
+                    "trigger_observation_roles": ", ".join(
+                        "context" for _ in trigger_ids
+                    ),
                     "suggested_activity": rng.choice(ACTIVITIES),
                     "activity_date": session["calendar_date"],
                     "conducting_teacher_id": session["teacher_id"],
@@ -672,6 +682,85 @@ def make_tests(
                     "status": status,
                 }
             )
+
+    l003_enrollment = max(
+        (row for row in enrollments if row["learner_id"] == "L003"),
+        key=lambda row: row["academic_year"],
+        default=None,
+    )
+    l003_demo_observations = sorted(
+        (
+            row
+            for row in observations
+            if row["learner_id"] == "L003"
+            and row["observation_id"].startswith("OBS_DEMO_L003_SUGGEST_")
+        ),
+        key=lambda row: row["observation_id"],
+    )
+    if l003_enrollment is not None and len(l003_demo_observations) == 2:
+        demo_sessions = sorted(
+            (
+                row
+                for row in calendar
+                if row["class_id"] == l003_enrollment["class_id"]
+                and row["academic_year"] == l003_enrollment["academic_year"]
+                and row["teacher_id"] == "T001"
+            ),
+            key=lambda row: (row["calendar_date"], row["period_number"]),
+        )
+        if demo_sessions:
+            support_observation, contradicting_observation = l003_demo_observations
+            trigger_ids = [
+                support_observation["observation_id"],
+                contradicting_observation["observation_id"],
+            ]
+            trigger_roles = ["supporting", "contradicting"]
+            activity_date = demo_sessions[min(1, len(demo_sessions) - 1)]["calendar_date"]
+            tests.extend(
+                [
+                    {
+                        "test_id": "TEST_DEMO_L003_SUGGESTED",
+                        "learner_id": "L003",
+                        "trigger_observation_ids": ", ".join(trigger_ids),
+                        "trigger_observation_roles": ", ".join(trigger_roles),
+                        "suggested_activity": "Invite L003 to explain one idea during a pair task and record whether participation varies by context.",
+                        "activity_date": activity_date,
+                        "conducting_teacher_id": "T001",
+                        "observed_outcome": "",
+                        "outcome_observation_id": "",
+                        "status": "SUGGESTED",
+                    },
+                    {
+                        "test_id": "TEST_DEMO_L003_COMPLETED",
+                        "learner_id": "L003",
+                        "trigger_observation_ids": ", ".join(trigger_ids),
+                        "trigger_observation_roles": ", ".join(trigger_roles),
+                        "suggested_activity": "Invite L003 to explain one idea during a pair task and record whether participation varies by context.",
+                        "activity_date": activity_date,
+                        "conducting_teacher_id": "T001",
+                        "observed_outcome": "Synthetic demo: L003 completed a follow-up puzzle and explained one step after a prompt.",
+                        "outcome_observation_id": "OBS_DEMO_L003_OUTCOME_01",
+                        "status": "COMPLETED",
+                    },
+                ]
+            )
+            outcome_observation = make_observation(
+                "OBS_DEMO_L003_OUTCOME_01",
+                "L003",
+                demo_sessions[min(1, len(demo_sessions) - 1)],
+                rng,
+                content=tests[-1]["observed_outcome"],
+                observation_type="test_result",
+            )
+            outcome_observation.update(
+                {
+                    "source_type": "Text note",
+                    "capture_method": "text",
+                    "possible_theme": "Participation",
+                    "linked_test_id": "TEST_DEMO_L003_COMPLETED",
+                }
+            )
+            outcome_observations.append(outcome_observation)
     return tests, outcome_observations
 
 
@@ -845,6 +934,7 @@ def main() -> None:
                 "test_id",
                 "learner_id",
                 "trigger_observation_ids",
+                "trigger_observation_roles",
                 "suggested_activity",
                 "activity_date",
                 "conducting_teacher_id",

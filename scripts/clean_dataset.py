@@ -382,7 +382,26 @@ def main() -> None:
             f"Test {row['test_id']} has invalid status",
             errors,
         )
-        for observation_id in filter(None, (part.strip() for part in row["trigger_observation_ids"].split(","))):
+        trigger_ids = list(
+            filter(None, (part.strip() for part in row["trigger_observation_ids"].split(",")))
+        )
+        trigger_roles = [
+            part.strip()
+            for part in row.get("trigger_observation_roles", "").split(",")
+            if part.strip()
+        ]
+        if trigger_roles:
+            check_reference(
+                len(trigger_roles) == len(trigger_ids),
+                f"Test {row['test_id']} has a different number of trigger roles and observations",
+                errors,
+            )
+            check_reference(
+                all(role in {"supporting", "contradicting", "context"} for role in trigger_roles),
+                f"Test {row['test_id']} has an invalid trigger observation role",
+                errors,
+            )
+        for observation_id in trigger_ids:
             observation = observations.get(observation_id)
             check_reference(
                 observation is not None and observation["learner_id"] == learner_id,

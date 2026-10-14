@@ -183,6 +183,14 @@ const TABLES = [
     optional: true,
   },
 ];
+const RELATIONSHIP_TABLES = [
+  "activity_test_observations",
+  "teacher_review_observations",
+  "teacher_review_tests",
+];
+const STAGING_EMPTY_CHECK_TABLES = [
+  ...new Set([...TABLES.map(({ table }) => table), ...RELATIONSHIP_TABLES]),
+];
 
 function parseCsv(text, fileName) {
   const rows = [];
@@ -292,6 +300,70 @@ function configuredDatabaseUrl() {
   return undefined;
 }
 
+function configuredLocalSetting(name) {
+  if (process.env[name]) return process.env[name];
+  const filePath = path.join(ROOT, ".env.local");
+  if (!fs.existsSync(filePath)) return undefined;
+  const line = fs.readFileSync(filePath, "utf8")
+    .split(/\r?\n/)
+    .find((entry) => new RegExp(`^\\s*${name}\\s*=`).test(entry));
+  if (!line) return undefined;
+  const value = line.replace(new RegExp(`^\\s*${name}\\s*=\\s*`), "").trim();
+  return value.replace(/^(['"])(.*)\1$/, "$2");
+}
+
+function isSupabaseStagingTarget(
+  connectionString,
+  configuredProjectRef,
+  confirmedProjectRef,
+) {
+  if (
+    !connectionString ||
+    !/^[a-z0-9]{20}$/.test(configuredProjectRef ?? "") ||
+    configuredProjectRef !== confirmedProjectRef
+  ) {
+    return false;
+  }
+  let url;
+  try {
+    url = new URL(connectionString);
+  } catch {
+    return false;
+  }
+  if (
+    !["postgres:", "postgresql:"].includes(url.protocol) ||
+    url.pathname !== "/postgres" ||
+    url.searchParams.get("sslmode") !== "require"
+  ) {
+    return false;
+  }
+
+  let username;
+  try {
+    username = decodeURIComponent(url.username);
+  } catch {
+    return false;
+  }
+  return (
+    url.hostname.endsWith(".pooler.supabase.com") &&
+    url.port === "6543" &&
+    username === `postgres.${configuredProjectRef}`
+  );
+}
+
+async function assertStagingDatabaseEmpty(client) {
+  for (const table of STAGING_EMPTY_CHECK_TABLES) {
+    const result = await client.query(
+      `SELECT EXISTS (SELECT 1 FROM ${table} LIMIT 1) AS has_rows`,
+    );
+    if (result.rows[0]?.has_rows) {
+      throw new Error(
+        `Refusing staging import because ${table} is not empty. Use a fresh staging project; no rows were changed.`,
+      );
+    }
+  }
+}
+
 function* buildUpsert(definition, rows) {
   const { columns, table, keys } = definition;
   const values = [];
@@ -329,17 +401,31 @@ function* buildUpsert(definition, rows) {
 }
 
 function relationshipRows(rows, column) {
-  return rows.flatMap((row) => (
-    row[column]
+  return rows.flatMap((row) => {
+    const references = row[column]
       .split(",")
       .map((value) => value.trim())
-      .filter(Boolean)
-      .map((reference) => ({
+      .filter(Boolean);
+    const roles = (row.trigger_observation_roles ?? "")
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean);
+    if (column === "trigger_observation_ids" && roles.length > 0) {
+      if (roles.length !== references.length) {
+        throw new Error("Trigger observation roles must align with observation IDs.");
+      }
+      if (roles.some((role) => !["supporting", "contradicting", "context"].includes(role))) {
+        throw new Error("Trigger observation role is invalid.");
+      }
+    }
+    return references.map((reference, index) => ({
         learner_id: row.learner_id,
         parent_id: row.test_id ?? row.note_id,
         reference,
-      }))
-  ));
+        citation_role:
+          column === "trigger_observation_ids" ? roles[index] ?? "context" : undefined,
+      }));
+  });
 }
 
 function normalizeActivityTestStatuses(rows) {
@@ -387,20 +473,45 @@ async function insertRelationships(client, table, columns, rows) {
 
 async function main() {
   const args = process.argv.slice(2);
-  if (!args.includes("--confirm-development")) {
-    throw new Error("Refusing to import without --confirm-development.");
-  }
-  const connectionString = configuredDatabaseUrl();
-  if (!connectionString || !databaseIsLocalDevelopment(connectionString)) {
+  const stagingConfirmation = args
+    .find((arg) => arg.startsWith("--confirm-staging="))
+    ?.slice("--confirm-staging=".length);
+  const stagingMode = stagingConfirmation !== undefined;
+  if (stagingMode === args.includes("--confirm-development")) {
     throw new Error(
-      "Refusing to import: DATABASE_URL must target local dira_dev as user dira_dev.",
+      "Choose exactly one explicit target confirmation: --confirm-development or --confirm-staging=<project-ref>.",
     );
+  }
+
+  let connectionString;
+  if (stagingMode) {
+    connectionString = configuredLocalSetting("DIRA_STAGING_DATABASE_URL");
+    const projectRef = configuredLocalSetting("DIRA_STAGING_PROJECT_REF");
+    if (!isSupabaseStagingTarget(connectionString, projectRef, stagingConfirmation)) {
+      throw new Error(
+        "Refusing staging import: staging URL, transaction-pooler project reference, SSL mode, and typed project confirmation must all match.",
+      );
+    }
+  } else {
+    if (!args.includes("--confirm-development")) {
+      throw new Error("Refusing to import without --confirm-development.");
+    }
+    connectionString = configuredDatabaseUrl();
+    if (!connectionString || !databaseIsLocalDevelopment(connectionString)) {
+      throw new Error(
+        "Refusing to import: DATABASE_URL must target local dira_dev as user dira_dev.",
+      );
+    }
   }
 
   const inputArg = args.find((arg) => arg.startsWith("--input-dir="));
   const inputDir = path.resolve(
     ROOT,
-    inputArg ? inputArg.slice("--input-dir=".length) : "data/cleaned/generated_dev",
+    inputArg
+      ? inputArg.slice("--input-dir=".length)
+      : stagingMode
+        ? "data/cleaned/generated_day2"
+        : "data/cleaned/generated_dev",
   );
   const datasets = new Map(
     TABLES.map((definition) => [definition.file, readDataset(inputDir, definition)]),
@@ -412,12 +523,16 @@ async function main() {
       console.log(`${definition.file}: ${datasets.get(definition.file).length} rows`);
     }
     console.log(
-      `Dataset and local development target validated (${connection.hostname}${connection.pathname}); no database connection was made.`,
+      stagingMode
+        ? "Dataset and staging Supabase project reference validated; no database connection was made."
+        : `Dataset and local development target validated (${connection.hostname}${connection.pathname}); no database connection was made.`,
     );
     return;
   }
   console.log(
-    `About to upsert synthetic development data into ${connection.hostname}${connection.pathname} from ${inputDir}.`,
+    stagingMode
+      ? `About to import synthetic data into the confirmed, empty Supabase staging project from ${inputDir}.`
+      : `About to upsert synthetic development data into ${connection.hostname}${connection.pathname} from ${inputDir}.`,
   );
 
   const client = new Client({ connectionString });
@@ -425,6 +540,10 @@ async function main() {
   try {
     await client.query("BEGIN");
     await client.query("SET CONSTRAINTS ALL DEFERRED");
+    if (stagingMode) {
+      await client.query("SELECT pg_advisory_xact_lock(824139210482::bigint)");
+      await assertStagingDatabaseEmpty(client);
+    }
     for (const definition of TABLES) {
       const rows = datasets.get(definition.file);
       for (const query of buildUpsert(definition, rows)) {
@@ -436,11 +555,12 @@ async function main() {
     await insertRelationships(
       client,
       "activity_test_observations",
-      ["test_id", "learner_id", "observation_id"],
+      ["test_id", "learner_id", "observation_id", "citation_role"],
       relationshipRows(tests, "trigger_observation_ids").map((row) => ({
         test_id: row.parent_id,
         learner_id: row.learner_id,
         observation_id: row.reference,
+        citation_role: row.citation_role,
       })),
     );
 
@@ -481,7 +601,16 @@ async function main() {
   console.log("Synthetic development dataset imported successfully.");
 }
 
-main().catch((error) => {
-  console.error(error instanceof Error ? error.message : error);
-  process.exitCode = 1;
-});
+module.exports = {
+  assertStagingDatabaseEmpty,
+  databaseIsLocalDevelopment,
+  isSupabaseStagingTarget,
+  relationshipRows,
+};
+
+if (require.main === module) {
+  main().catch((error) => {
+    console.error(error instanceof Error ? error.message : error);
+    process.exitCode = 1;
+  });
+}

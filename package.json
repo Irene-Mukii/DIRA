@@ -8,6 +8,7 @@
     "build": "next build",
     "start": "next start",
     "db:seed:dev": "node scripts/seed-development.cjs --confirm-development",
+    "db:seed:staging": "node scripts/seed-development.cjs",
     "test:follow-ups": "vitest run",
     "test:suggest-test": "vitest run --config vitest.unit.config.mjs",
     "test:fetch-mcp": "vitest run --config vitest.unit.config.mjs tests/fetch-mcp.integration.test.mjs",

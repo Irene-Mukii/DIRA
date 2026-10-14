@@ -1,383 +1,312 @@
-# Evaluation Documentation
-# Evaluation criteria and results for the system
+# Dira evaluation record
 
-## Evaluation plan (not results)
+**Audit date:** 2026-10-14
+**Scope:** Repository implementation, focused mocked/unit suite, and TypeScript
+type-check. No production database, provider account, deployed endpoint, or
+live third-party MCP call was exercised for this audit.
 
-The scenarios below define the acceptance checks. A planned or blocked check is
-not a pass. `PASS` applies only to the scope named in the actual-results record;
-it does not imply live production readiness. Tests that need PostgreSQL, a
-running MCP server, external network access, or provider credentials must state
-which of those dependencies were actually available.
+Statuses mean: `PASS` = the named behaviour was demonstrated by an executed
+test; `PARTIAL` = only part of the behaviour was demonstrated; `FAIL` = an
+executed test or reproducible check demonstrates the criterion is not met;
+`NOT TESTED` = no adequate test was executed; `UNVERIFIED` = available evidence
+does not establish the result. A passing unit test does not establish a live
+integration or production guarantee.
 
-The follow-up evaluation should include an authenticated, non-demo deployment
-only after caller identity and administrator authorization are implemented.
-Never use production learner data for test fixtures. Use synthetic data,
-loopback `dira_dev`, and read-only calls where possible.
+## 1. Purpose and evaluation scope
 
-## Executed evaluation results
+Dira's evaluated workflow is a teacher-facing evidence loop: record an
+observation, propose a classroom activity from reviewed evidence, let a teacher
+decide what to try, and retain the recorded result. The agent must not diagnose,
+rank, or assign a learner a pathway.
 
-### Ten behavioral scenarios
+This record evaluates the code and tests currently in the worktree, including
+the current focused test run. It does not certify production readiness,
+provider availability, real teacher authentication, or system-wide reliability.
+No learner records were created or changed, and no live SMS, call, model, or
+education-source request was made during this audit.
 
-#### 1. Normal observation
+## 2. Environment and prerequisites
 
-- **Objective / risk:** Verify that a normal Suggest Test run uses retrieved
-  learner evidence and validated source context, then persists only a valid
-  suggestion.
-- **Test level / prerequisites:** Integration test with mocked MCP/model
-  providers; no live credentials or learner database required.
-- **Command / procedure:** `npm run test:suggest-test`; test
-  `LangGraph Suggest Test workflow > uses the in-process MCP evidence, history,
-  retrieval, and persistence tools with retrieved context`.
-- **Expected:** The workflow retrieves the required context, uses the graph
-  stages, validates the generated suggestion, and persists it once.
-- **Actual / status:** The focused workflow test passed. **PASS** for this
-  mocked integration path; no manual end-to-end learner workflow was run.
-- **Evidence / limitations / follow-up:** `npm run test:suggest-test` completed
-  with 29 passed and 1 opt-in integration test skipped. Repeat against a safe
-  seeded development database when full application-level verification is
-  needed.
+- Node dependencies were already installed in the repository.
+- The focused test suite uses the explicit include list in
+  `vitest.unit.config.mjs`. The model, database, voice-provider and retrieval
+  behaviours it tests are mocked or otherwise isolated; its opt-in
+  `tests/fetch-mcp.integration.test.mjs` case was skipped.
+- The full `npm run test:follow-ups` suite is not equivalent to the focused
+  suite. Its global setup requires `DIRA_TEST_DATABASE_URL` targeting local
+  `dira_dev` as user `dira_dev` on port 5433, and follow-up tests insert and
+  clean up database fixtures. It was not run because it has database side
+  effects.
+- Live GLM, OpenAI, Africa's Talking, public MCP, Keeper, and Fetch MCP checks
+  require their respective credentials, endpoints, network access, and—in the
+  Fetch/PostgreSQL case—local database and `uvx`. These were not exercised here.
+- Do not use production learner data for evaluation. Use synthetic records and
+  an isolated local database only after confirming the test target.
 
-#### 2. Missing evidence
+## 3. Test execution instructions and observed run
 
-- **Objective / risk:** Ensure a workflow does not infer an outcome or create
-  an evidence assessment when required recorded evidence is absent.
-- **Test level / prerequisites:** Unit test with model and retrieval calls
-  observable through mocks.
-- **Command / procedure:** `npm run test:suggest-test`; test
-  `evidence reasoning > does not call the model or retrieval when the test has
-  no recorded outcome`.
-- **Expected:** No model call, retrieval, or unsupported assessment is made.
-- **Actual / status:** The test passed and observed no model/retrieval call.
-  **PARTIAL** because it covers the evidence-reasoning no-outcome path, not
-  every Suggest Test input with missing learner evidence.
-- **Evidence / limitations / follow-up:** Add a dedicated empty-observation
-  Suggest Test scenario and verify the public tool response is explicit.
+Commands executed on 2026-10-14:
 
-#### 3. State-dependent tool selection
+| Command | Observed result |
+|---|---|
+| `npm run test:suggest-test` | Exit 0; 12 test files passed, 1 skipped; 52 tests passed, 1 skipped. The skipped test is the opt-in Fetch MCP/PostgreSQL integration. |
+| `npm exec tsc -- --noEmit` | Exit 0; no TypeScript diagnostics were printed. |
 
-- **Objective / risk:** Confirm the agent selects only tools permitted by the
-  current workflow state and does not skip required checks.
-- **Test level / prerequisites:** Not run; requires tests over the scheduled
-  agent's state branches and permitted tool inventory.
-- **Command / procedure:** Planned: `npm run test:follow-ups` plus a focused
-  orchestrator test that asserts the exact discovered/called tools for each
-  state.
-- **Expected:** Read/prepare/dispatch tools are selected only for their
-  matching trigger and state; state-changing calls remain bounded.
-- **Actual / status:** No state-dependent scheduled-agent selection test was
-  executed in this evaluation. **NOT TESTED**.
-- **Evidence / limitations / follow-up:** Do not infer this behavior from the
-  configured tool list or source inspection alone; add and execute the focused
-  tool-selection tests.
+The focused suite covers retrieval/cache behavior, evidence reasoning,
+mocked model requests and cost calculation, voice configuration/demo routes,
+staging-import validation, the Suggest Test workflow, and registration of the
+public Dira MCP tools. It is not a full browser E2E run, a production build, or
+a live-provider test.
 
-#### 4. Tool failure
+Not run: `npm run test:follow-ups`, `npm run mcp:test:external`, `npm run mcp:test`,
+`npm run build`, live provider requests, and database-backed audit
+reconstruction. The external MCP smoke script invokes live education
+retrieval; no such external request was necessary to establish the focused
+suite's result.
 
-- **Objective / risk:** Ensure a tool/provider failure is reported and does not
-  produce a success-shaped fallback proposal.
-- **Test level / prerequisites:** Mocked graph test; external MCP endpoint and
-  local database for the separate live smoke procedure.
-- **Command / procedure:** `npm run test:suggest-test`; test
-  `LangGraph Suggest Test workflow > propagates a model outage and does not
-  save a fallback proposal`. Also ran `npm run mcp:test:external`.
-- **Expected:** The model outage propagates as failure without persistence;
-  retrieval tool invocation returns a valid structured result whose source
-  failures remain visible.
-- **Actual / status:** The mocked model-outage test passed. The external MCP
-  client discovered 13 tools and invoked education retrieval, which returned
-  `failed` with four source failures. **PASS** for failure propagation and
-  protocol response shape; live content retrieval did not succeed.
-- **Evidence / limitations / follow-up:** IB returned 403, EEF 404, AMI
-  `response_too_large`, and WWC `content_extraction_failure`. No source-access
-  error was bypassed.
+## 4. Test inventory and coverage
 
-#### 5. Recoverable timeout
+The 13 files selected by `vitest.unit.config.mjs` are:
 
-- **Objective / risk:** Verify a timed-out optional Fetch MCP refresh preserves
-  a safe retrieval result and does not mark stale content fresh.
-- **Test level / prerequisites:** Unit test with a stale metadata record,
-  direct retrieval response, and Fetch MCP timeout mock.
-- **Command / procedure:** `npm run test:suggest-test`; test
-  `education source retrieval > falls back to safe direct content when a stale
-  cache refresh fails`.
-- **Expected:** The Fetch timeout is logged as a failed refresh; direct
-  validated content may be returned; the old Markdown is not refreshed or
-  overwritten.
-- **Actual / status:** The test passed; direct evidence was returned, Fetch was
-  called once, and cache save was not called. **PASS** for this mocked
-  recoverable timeout.
-- **Evidence / limitations / follow-up:** A real Fetch MCP timeout/recovery
-  integration was not run because `uvx.exe` was unavailable.
+- `tests/education-retrieval.test.mjs`
+- `tests/education-markdown-cache.test.mjs`
+- `tests/fetch-mcp.integration.test.mjs` — `retrieves and caches an approved public source, then serves a cache hit` (opt-in; skipped)
+- `tests/evidence-reasoning.test.mjs`
+- `tests/models.test.mjs`
+- `tests/model-cost.test.mjs`
+- `tests/voice-config.test.mjs`
+- `tests/internal-demo-voice-route.test.mjs`
+- `tests/public-demo-voice.test.mjs`
+- `tests/demo-call-route.test.mjs`
+- `tests/seed-staging-import.test.mjs`
+- `tests/suggest-test.test.mjs`
+- `tests/suggest-test-graph.test.mjs`
 
-#### 6. Conflicting evidence
+The separate `lib/mcp-tools/suggestTest.test.ts` file is not in the focused
+config's include list and was not run. Its existence is not a test result.
+Likewise, passing tests use mocks where specified and do not establish
+PostgreSQL or provider behaviour outside those test boundaries.
 
-- **Objective / risk:** Ensure contradictory learner evidence remains visible
-  and is not collapsed into an unsupported conclusion.
-- **Test level / prerequisites:** Not run; requires a synthetic fixture with
-  contradictory linked observations/outcomes.
-- **Command / procedure:** Planned: add a focused fixture and run
-  `npm run test:suggest-test`, then inspect the persisted structured result.
-- **Expected:** Contradictions are reported as such; the agent asks for further
-  evidence or returns an inconclusive result rather than inventing a resolution.
-- **Actual / status:** No dedicated conflicting-evidence scenario was
-  executed. **NOT TESTED**.
-- **Evidence / limitations / follow-up:** Existing evidence reasoning tests
-  validate supplied references but do not demonstrate the requested
-  contradiction handling.
+### Behavioural evaluation scenarios
 
-#### 7. Unsupported claim
+These scenarios are separate from the aggregate unit-test count above. Each row
+states the intended result and the observed evidence. `PARTIAL` means a named
+test passed only for the explicitly described mocked or bounded behaviour; it
+does not mean the complete challenge criterion passed. No behavioural scenario
+in this table has a full `PASS`.
 
-- **Objective / risk:** Prevent fabricated citations or claims unsupported by
-  the retrieved evidence from being persisted.
-- **Test level / prerequisites:** Mocked graph with an invalid citation followed
-  by a bounded retry.
-- **Command / procedure:** `npm run test:suggest-test`; tests
-  `LangGraph Suggest Test workflow > retries once when a generated citation is
-  not among retrieved sources` and `> never persists when output remains
-  invalid after the bounded retry`.
-- **Expected:** Invalid citations are retried once; if still invalid, no
-  suggestion is persisted.
-- **Actual / status:** Both tests passed. **PASS** for citation validation and
-  bounded persistence protection.
-- **Evidence / limitations / follow-up:** This does not prove every
-  natural-language educational claim is grounded; review generated language
-  in a separate qualitative evaluation.
+| # | Scenario and expected result | Exact existing test or inspection | Observed result and limits | Status |
+|---|---|---|---|---|
+| 1 | **Normal observation:** a valid teacher observation is persisted once with its original content and a real returned ID. | No focused `log_observation` persistence test was run. | No observation write was verified in this audit. A graph test or tool registration is not evidence of a database-backed observation write. | `NOT TESTED` |
+| 2 | **Missing evidence:** an accepted test without a recorded outcome is not assessed, and the model/retrieval are not called. | `tests/evidence-reasoning.test.mjs` — `evidence reasoning > does not call the model or retrieval when the test has no recorded outcome` | Passed with mocked database, model, and retrieval dependencies for an accepted test lacking an outcome. It does not test Suggest Test with zero observations or prove live database behaviour. | `PARTIAL` |
+| 3 | **State-dependent tool selection:** the scheduled agent chooses or withholds tools based on trigger and returned state, and never dispatches without due work. | No scheduled-orchestrator behavioural test is in the focused config. | Source inspection confirms trigger-specific allowlists and a due-count dispatch gate, but no run tested decisions against changed tool results. | `NOT TESTED` |
+| 4 | **Model failure:** a model outage is surfaced and no fallback proposal is persisted. | `tests/suggest-test-graph.test.mjs` — `LangGraph Suggest Test workflow > propagates a model outage and does not save a fallback proposal` | Passed with the model completion mocked to reject. It does not test a live provider outage or arbitrary MCP-tool failures. | `PARTIAL` |
+| 5 | **Retrieval failure recovery:** a failed optional cache refresh may use independently retrieved direct content, without treating failed refresh content as fresh. | `tests/education-retrieval.test.mjs` — `education source retrieval > falls back to safe direct content when a stale cache refresh fails` | Passed with mocked Fetch MCP/cache and mocked direct HTTP responses. It does not demonstrate a real timeout, provider retry, or recovery from an uncertain write. | `PARTIAL` |
+| 6 | **Contradictory evidence:** conflicting records remain visible and are not discarded or resolved into an unsupported conclusion. | `lib/mcp-tools/suggestTest.test.ts` — `retains different reports instead of discarding apparent contradictions`; excluded from `vitest.unit.config.mjs`. | Test exists but was not run. No executed evaluation established how conflicting evidence appears in generated or persisted output. | `NOT TESTED` |
+| 7 | **Citation integrity:** unsupported evidence/source references are rejected or retried once; persist only output that passes reference validation. | `tests/suggest-test-graph.test.mjs` — `retries once when a generated citation is not among retrieved sources`; `never persists when output remains invalid after the bounded retry`; `tests/evidence-reasoning.test.mjs` — `fails explicitly when the model fabricates assessment evidence references` | All named tests passed with mocked generation, retrieval, and persistence dependencies. They prove reference-membership checks and bounded retry in those paths, not semantic entailment of every natural-language claim or live ownership checks. | `PARTIAL` |
+| 8 | **Approval enforcement:** accepting a proposal requires an individually authenticated teacher decision; the agent cannot self-approve. | No approval-bypass or self-approval test was run. Source inspection finds the legacy `/api/mcp/approve-note` route returns 501; the public accept tool uses the shared demo bearer context. | No authenticated approval guarantee is demonstrated. Suggest Test and scheduled-agent tool allowlists omit acceptance, but those source boundaries do not prove runtime enforcement across the public accept tool. | `UNVERIFIED` |
+| 9 | **Independent Dira MCP invocation:** a separate protocol client discovers actual HTTP tool schemas, invokes a tool, and verifies its result/persisted effect. | `tests/suggest-test-graph.test.mjs` — `LangGraph Suggest Test workflow > registers exactly thirteen public Dira MCP tools` | Passed using the SDK `InMemoryTransport`; it proves local registration and discovery of 13 tools, not the HTTP endpoint, independent-client invocation, or a persisted tool effect. The external smoke script was not run. | `PARTIAL` |
+| 10 | **Borrowed Keeper MCP:** authenticated MCP discovery and a bounded read-only calendar invocation return genuine data. | Repository search found definitions of `discoverKeeperCalendarTools`, `getKeeperEventCount`, and `getKeeperEvents`, but no application call sites. No live Keeper attempt was made. | The required connection-and-invocation path is absent from the application workflow. This is a repository-confirmed implementation gap, not an observed live-provider failure. Live discovery/invocation remain untested. | `FAIL` |
+| 11 | **Open-weights model requirement:** the challenge-required open-weight model executes a qualifying task, with evidence of the actual model and output. | No qualifying live model execution or retained run evidence was found. `tests/models.test.mjs` mocks the HTTP response; it does not establish model execution. | Repository documentation is inconsistent: `ARCHITECTURE.md` labels GLM-5.3 Flash open-weight while identifying hosted Z.AI; `PRODUCT_REQUIREMENTS.md` says the challenge requirement/model choice needs confirmation. This audit has no evidence of an open-weight inference run or confirmation of the exact judging criterion. | `UNVERIFIED` |
+| 12 | **Persisted run reconstruction:** a run can be reconstructed from durable correlated events, including model/tool outcomes and failures. | No database-backed reconstruction was executed. | No persisted run was inspected. Source-level logger fields and mocked tests do not establish log durability or reconstructability. | `NOT TESTED` |
+| 13 | **Actual per-run cost:** recorded provider usage for a real run is tied to its run ID, priced with the applicable rate, and reconciled against provider billing. | `tests/model-cost.test.mjs` — `applies separate input, cached-input, and output rates`; `marks missing usage and unknown model rates as unpriced`; `tests/models.test.mjs` — `captures provider token usage when the response includes it` | Passed unit tests for the cost formula, unknown-usage handling, and parsing mocked provider usage. These do not establish actual provider usage, persisted run-level cost, billing reconciliation, or total infrastructure cost. | `PARTIAL` |
 
-#### 8. Approval bypass
+## 5. Agent autonomy and dynamic tool-use evaluation
 
-- **Objective / risk:** Ensure the agent cannot bypass teacher approval or
-  transition a proposal without the authorized acceptance operation.
-- **Test level / prerequisites:** Not run; requires an authorization-focused
-  API/MCP test that attempts prohibited transitions.
-- **Command / procedure:** Planned: add a negative authorization test for each
-  state-changing approval path, then run `npm run test:suggest-test`.
-- **Expected:** The model/caller cannot mark an unapproved suggestion accepted
-  or bypass server-side validation.
-- **Actual / status:** No dedicated approval-bypass test was executed.
-  **NOT TESTED**.
-- **Evidence / limitations / follow-up:** External MCP authorization is a
-  shared demo bearer token, not production user authentication; production
-  approval controls remain a prerequisite.
+There are two materially different agent paths:
 
-#### 9. Agent self-approval
+1. The request-path Suggest Test LangGraph invokes a fixed sequence of
+   supporting MCP tools: retrieve learner observations and history, prepare
+   evidence, conditionally retrieve education resources, construct context,
+   generate structured output, validate it, retry invalid output once, and
+   persist only valid output. It has state-dependent gates, but does not ask
+   the model to select arbitrary tools.
+2. The scheduled orchestrator asks GLM for function-tool calls. It filters
+   tools by trigger, limits model turns and total calls, checks due-job results
+   before dispatch, and allows at most one dispatch call. This is bounded
+   model-directed tool use in the source. The focused suite does not include an
+   orchestrator test proving that the model's actual choices respond correctly
+   to changing state.
 
-- **Objective / risk:** Ensure an agent cannot approve its own generated
-  suggestion or call-observation draft.
-- **Test level / prerequisites:** Not run; requires an attempted self-approval
-  through each relevant public and internal interface.
-- **Command / procedure:** Planned: attempt self-approval with a synthetic
-  agent-run identity and assert the server denies it; run the relevant API/MCP
-  and database tests.
-- **Expected:** Approval remains a distinct authorized human action; agent
-  output remains a proposal or unconfirmed draft.
-- **Actual / status:** No self-approval scenario was executed. **NOT TESTED**.
-- **Evidence / limitations / follow-up:** Do not treat a UI label or tool
-  boundary as proof of authorization; add explicit negative tests before
-  production.
+Therefore, genuine state-dependent selection by the scheduled agent is
+**NOT TESTED**. Do not describe the fixed Suggest Test graph as autonomous
+tool selection or claim runtime autonomy based only on its graph definition.
 
-#### 10. Audit reconstruction
+## 6. MCP tool contracts and independent reusability
 
-- **Objective / risk:** Reconstruct a workflow from persisted, correlated
-  events without relying on private chain-of-thought or transient console logs.
-- **Test level / prerequisites:** PostgreSQL migrations 002 and 009, a known
-  `run_id`, and a populated activity log.
-- **Command / procedure:** Planned: query
-  `agent_activity_logs` by `run_id`, order by timestamp/id, and compare every
-  event to the run output and UI.
-- **Expected:** Run, model, tool, cache, and failure events share the same run
-  ID and sufficient timestamp/status metadata to reconstruct execution.
-- **Actual / status:** No persisted-event reconstruction was completed. The
-  browser page `/agent-logs` rendered, but showed 0 records; therefore row
-  accuracy and reconstruction remain **NOT TESTED**.
-- **Evidence / limitations / follow-up:** The UI screen load alone does not
-  prove database persistence or correct authorization. Re-run with a known
-  test `run_id` after confirming database connectivity.
+The HTTP route `app/api/mcp/server/route.ts` exposes a stateless Streamable HTTP
+server with bearer-token checking and 13 Dira-owned tools. A focused in-memory
+SDK test passed and asserted that exactly 13 tools are registered. This proves
+the local server registration/discovery contract in that test, not an
+independent HTTP client's live discovery or invocation.
 
-### Implementation-specific evaluations
+The registered tools are `log_observation`, `suggest_test`,
+`get_learner_observations`, `get_previous_suggestions`,
+`retrieve_education_resources`, `persist_test_suggestion`,
+`regenerate_test_suggestion`, `accept_suggested_test`,
+`build_evidence_summary`, `prepare_daily_follow_up_queue`,
+`list_due_follow_ups`, `dispatch_one_due_follow_up`, and
+`save_call_observation_drafts`.
 
-#### Automatic scheduled execution and duplicate-trigger protection
+The bearer token is shared; `resolveTeacherContext()` selects a deterministic
+demo teacher from the database rather than authenticating the MCP caller as an
+individual. This is not production teacher authorization. Also,
+`npm run mcp:server` starts a separate stdio server that currently registers
+only `log_observation`; it is not the same 13-tool HTTP endpoint.
 
-- **Objective / risk:** Verify a deployed scheduler starts runs on the intended
-  schedule and retries/duplicate triggers do not duplicate work.
-- **Test level / prerequisites:** Deployment/manual verification; external
-  scheduler, protected trigger secret, local or staging PostgreSQL, and a
-  controlled schedule fixture.
-- **Command / procedure:** Planned: configure the external scheduler to call
-  `POST /api/internal/follow-up-agent` with either
-  `{"trigger":"prepare_queue"}` or `{"trigger":"dispatch_due"}`, then replay a
-  trigger and inspect durable queue state.
-- **Expected:** The intended jobs run once; database idempotency and dispatch
-  claims prevent duplicate work; run IDs and failures are visible.
-- **Actual / status:** No hosting scheduler is configured and no automatic
-  execution was observed. The protected trigger exists; queue idempotency is
-  implemented in the existing database flow but was not revalidated here.
-  **NOT TESTED**.
-- **Evidence / limitations / follow-up:** An operator must select and verify a
-  scheduler, retry policy, secret rotation, timezone, and duplicate-trigger
-  behavior before claiming scheduled operation. Cache cleanup is a separate
-  hourly maintenance timer, not a follow-up scheduler.
+**Assessment: PARTIAL.** The exact test
+`tests/suggest-test-graph.test.mjs` — `LangGraph Suggest Test workflow >
+registers exactly thirteen public Dira MCP tools` passed using an in-memory
+SDK transport. It proves local tool registration/discovery only. Evidence
+still needed: a separate protocol-compatible client must connect to the
+running HTTP endpoint, discover its actual schemas, invoke a bounded tool,
+and verify the returned result and any intended database effect. The external
+smoke script targets Dira's own endpoint and was not run; it would not prove
+Keeper integration.
 
-#### Independent external MCP discovery and invocation
+## 7. External MCP integration
 
-- **Objective / risk:** Verify an independent client can authenticate, discover
-  Dira tools, validate the retrieval schema, and invoke the read-only retrieval
-  tool without learner writes.
-- **Test level / prerequisites:** Live protocol smoke test; local Dira MCP
-  endpoint, `DIRA_MCP_SERVER_URL`, `DIRA_MCP_ACCESS_TOKEN`, server runtime, and
-  network access to education sources.
-- **Command / procedure:** `npm run mcp:test:external`.
-- **Expected:** Streamable HTTP discovery advertises the tools; the client
-  invokes `retrieve_education_resources` and receives the expected structured
-  shape.
-- **Actual / status:** The command passed on 2026-10-14, discovered 13 tools,
-  and invoked retrieval with a valid four-source response. **PARTIAL**:
-  protocol/discovery/invocation passed, but all four source retrievals failed
-  in that live run (IB 403, EEF 404, AMI oversized, WWC extraction failure).
-- **Evidence / limitations / follow-up:** Command output reported durations
-  1.3–3.7 seconds. The shared bearer token resolves to a server-selected demo
-  teacher and does not authenticate the MCP caller as an individual.
+Keeper.sh is the intended borrowed calendar MCP server. The repository contains
+a Streamable HTTP MCP client and read-only calendar helper functions, but a
+repository-wide call-site check found no caller of
+`discoverKeeperCalendarTools`, `getKeeperEventCount`, or `getKeeperEvents`.
+The client requires an OAuth provider for that integration, and no authenticated
+Keeper invocation was executed.
 
-#### Fetch MCP cache hit, miss, refresh, failure, and 14-day freshness
+**Assessment: FAIL — the required Keeper connection-and-invocation path is not
+wired into an application workflow.** Live Keeper discovery and invocation
+remain **NOT TESTED**. A configured URL or helper function alone does not meet
+the challenge requirement.
 
-- **Objective / risk:** Verify relevant fresh cache entries avoid source URL
-  discovery and Fetch MCP; misses and stale entries preserve the existing
-  retrieval flow; successful Markdown is cached for 14 days; failures do not
-  replace content or extend freshness.
-- **Test level / prerequisites:** Unit tests and an opt-in live integration;
-  live integration additionally requires local `dira_dev`, migrations 002/009,
-  network access, and `uvx`.
-- **Command / procedure:** `npm run test:suggest-test`; intended live command:
-  set `RUN_FETCH_MCP_INTEGRATION=true`, `FETCH_MCP_ENABLED=true`, and
-  `FETCH_MCP_COMMAND` to `uvx.exe`, then run `npm run test:fetch-mcp`.
-- **Expected:** A relevant fresh cached page avoids sitemap, robots, page, and
-  Fetch MCP requests; no relevant cache match continues through existing
-  discovery and exact-page cache behavior; only validated new content is
-  stored; expiry purges the body at 14 days but retains metadata.
-- **Actual / status:** Unit tests passed for validated cache write, cache hit,
-  cache-first retrieval without source URL requests, fallback to discovery when
-  cached pages are irrelevant, timeout fallback, size/hash validation, and SQL
-  freshness/expiry semantics. The focused retrieval/cache run passed 13 tests.
-  **PARTIAL** because the opt-in live test was not run: `Get-Command uvx.exe`
-  failed because `uvx.exe` is not installed or on `PATH`.
-- **Evidence / limitations / follow-up:** Use the test command above after
-  installing/configuring `uvx`; do not infer a real provider/cache round trip
-  from the mocked tests.
+Fetch MCP is a separate, optional education-page extraction backend, launched
+over stdio behind Dira's retrieval service when `FETCH_MCP_ENABLED=true`; it is
+not Keeper and does not establish the borrowed calendar integration. Its
+live/PostgreSQL integration test
+`tests/fetch-mcp.integration.test.mjs` — `retrieves and caches an approved
+public source, then serves a cache hit` is opt-in and was skipped. Mocked tests
+`tests/education-retrieval.test.mjs` — `uses Fetch MCP only for approved pages
+and caches validated Markdown` and `serves fresh cached Markdown without
+starting Fetch MCP` passed; they verify those mocked adapter/cache paths only.
+Live Fetch MCP remains **UNVERIFIED**.
 
-#### PostgreSQL Markdown storage and large-content handling
+## 8. Evidence grounding and contradictory or missing evidence
 
-- **Objective / risk:** Verify the configured maximum Markdown fits PostgreSQL
-  and metadata reads do not unnecessarily load the body.
-- **Test level / prerequisites:** Manual local PostgreSQL verification on
-  `dira_dev` after migrations 002/009.
-- **Command / procedure:** Stored a 128,000-byte Markdown value in a local
-  transaction; checked fresh versus 14-day-stale timestamps; ran the expiry
-  update and verified body nulling with metadata retained.
-- **Expected:** The configured maximum stores intact, cache lookups apply the
-  freshness boundary, and expiry retains audit metadata without serving stale
-  content.
-- **Actual / status:** All checks passed on local `dira_dev`. **PASS** for the
-  configured maximum and access pattern. Migration 009 was applied and rerun
-  successfully to verify idempotent schema application.
-- **Evidence / limitations / follow-up:** This was a local database check; it
-  did not measure production-scale table growth, throughput, backup size, or
-  retrieval latency under load.
+The graph's output schema constrains generated activity fields and valid
+reference keys; persistence revalidates the proposal and observation ownership
+before saving. The exact passing mocked tests are listed in scenario 7:
+`tests/suggest-test-graph.test.mjs` — `retries once when a generated citation
+is not among retrieved sources` and `never persists when output remains invalid
+after the bounded retry`; and `tests/evidence-reasoning.test.mjs` — `fails
+explicitly when the model fabricates assessment evidence references`.
+`tests/evidence-reasoning.test.mjs` — `does not call the model or retrieval
+when the test has no recorded outcome` also passed for that one accepted-test/
+no-outcome case. These tests prove only their schema, reference, and
+call-suppression assertions; they do not prove semantic support for every
+generated claim, live database ownership, or all missing-evidence cases.
 
-#### Model usage capture and cost calculation
+**Assessment: PARTIAL.** These checks demonstrate reference/schema validation
+within their mocked paths; they do not prove that every natural-language claim
+is semantically supported by its cited record or that authorization and
+persistence work against a live database. Conflicting-evidence handling is
+**NOT TESTED** by the focused run; a similarly named test exists outside its
+include list but was not executed.
 
-- **Objective / risk:** Ensure returned token usage is captured and cost is not
-  reported as zero when usage or pricing is unknown.
-- **Test level / prerequisites:** Unit tests with mock GLM responses; no live
-  provider credentials required.
-- **Command / procedure:** `npm run test:suggest-test`; tests
-  `GLM completion requests > captures provider token usage when the response
-  includes it`, `model usage cost calculation > applies separate input,
-  cached-input, and output rates`, and `> marks missing usage and unknown model
-  rates as unpriced`.
-- **Expected:** Token counts are persisted; known rates produce a reproducible
-  estimate; missing usage/unknown rates produce `unknown`, not zero.
-- **Actual / status:** All listed tests passed. **PASS** for mocked usage and
-  formula behavior; no live provider billing comparison was performed.
-- **Evidence / limitations / follow-up:** GLM-5.3 Flash rates in code are
-  USD 0.15/million uncached input, USD 0.03/million cached input, and USD
-  0.50/million output, from the Z.AI pricing page observed 2026-10-14. The
-  stored date/version identifies the rate snapshot. These values measure
-  estimated model-token charges only, not hosting, PostgreSQL, network, or
-  Fetch-related infrastructure costs.
+## 9. Failure handling, retries, timeouts, and recovery
 
-#### Frontend agent-log accuracy and authorization
+The relevant executed mocked tests are:
 
-- **Objective / risk:** Verify the UI displays persisted event/model/cost fields
-  accurately and is not exposed without the expected authorization.
-- **Test level / prerequisites:** Manual browser verification with a known
-  persisted run; development server, migrations, and demo context.
-- **Command / procedure:** Open `http://localhost:3000/agent-logs`, refresh,
-  compare a known `run_id` with the database/API, then test production
-  authorization separately.
-- **Expected:** Rows and filters match stored events; cost/usage fields reflect
-  the persisted values; unauthorized users cannot access logs.
-- **Actual / status:** The page rendered with filters, columns, and the
-  development/demo warning, but displayed 0 records. **PARTIAL** for rendering
-  only; row accuracy and production authorization were not verified.
-- **Evidence / limitations / follow-up:** No screenshot or known populated
-  `run_id` comparison was retained. The route still uses the demo teacher
-  context; implement and test authenticated administrator authorization
-  before production exposure.
+- `tests/suggest-test-graph.test.mjs` — `propagates a model outage and does not save a fallback proposal`: rejects on a mocked model error and asserts no proposal persistence.
+- `tests/suggest-test-graph.test.mjs` — `retries once when a generated citation is not among retrieved sources` and `never persists when output remains invalid after the bounded retry`: one validation retry, then no persistence for still-invalid output.
+- `tests/education-retrieval.test.mjs` — `falls back to safe direct content when a stale cache refresh fails`: mocked optional refresh failure with direct retrieval fallback.
+- `tests/models.test.mjs` — `allows 75 seconds for a completion request`: asserts a 75-second abort signal is supplied to mocked fetch; it does not wait for or cause a real timeout.
+- `tests/models.test.mjs` — `logs the underlying network error and cause without logging credentials`: asserts mocked network-error reporting and credential redaction.
 
-#### Regression coverage for existing functionality
+These do not test a live network timeout followed by successful retry,
+duplicate-side-effect behaviour after an uncertain response, or MCP transport
+recovery.
 
-- **Objective / risk:** Detect regressions in the existing Suggest Test graph,
-  evidence reasoning, retrieval, model adapter, and cache/cost helper behavior.
-- **Test level / prerequisites:** Focused unit/integration suite; mocked
-  providers and no full deployment.
-- **Command / procedure:** `npm run test:suggest-test`; additionally
-  `npm exec tsc -- --noEmit`.
-- **Expected:** Existing focused tests and type checking pass; the opt-in live
-  Fetch integration remains skipped unless explicitly enabled.
-- **Actual / status:** 7 test files passed, 1 opt-in test file was skipped;
-  30 tests passed and 1 was skipped. TypeScript completed with exit code 0.
-  **PASS** for the focused regression/type-check scope.
-- **Evidence / limitations / follow-up:** This is not a full Next production
-  build, browser E2E run, or live provider test. Keep the skipped integration
-  test explicitly unverified until its prerequisites are available. The
-  evidence-reasoning tests also cover unchanged reassessment output, and
-  validation failures now log safe issue codes/paths per attempt without
-  recording the model response or learner evidence.
+These demonstrate the named mock paths only. The workflow does not retry a GLM
+outage into a fabricated fallback.
 
-#### Direct retrieval versus Fetch MCP justification
+**Assessment: PARTIAL.** No failed test was observed in the focused suite. The
+Fetch/PostgreSQL integration was skipped, not passed.
 
-- **Objective / risk:** Determine whether Fetch MCP materially improves
-  extraction, reliability, latency, interoperability, or maintenance compared
-  with Dira's existing direct HTTP/extraction path.
-- **Test level / prerequisites:** Manual controlled comparison of the same
-  WWC query/source, plus the independent MCP smoke test; public network access.
-- **Procedure:** Compare direct retrieval and Fetch MCP against the same WWC
-  content with a synthetic sitemap, record extracted text and elapsed time;
-  separately run `npm run mcp:test:external` against the live configured sources.
-- **Expected:** Fetch provides readable Markdown without weakening Dira's
-  source allowlist, URL validation, size limits, or failure reporting; measured
-  latency and failure categories determine whether it improves the baseline.
-- **Actual / status:** Direct retrieval returned relevant WWC content in about
-  1.25 seconds; Fetch MCP returned about 981 characters in about 3.16 seconds.
-  The live external smoke run then failed for all four configured sources.
-  **PARTIAL**: standard MCP interoperability and a successful controlled
-  extraction were observed, but no latency or live reliability improvement was
-  demonstrated.
-- **Evidence / limitations / follow-up:** The controlled comparison used a
-  synthetic sitemap; a reusable run ID/log artifact was not retained. A 403,
-  404, oversized response, timeout, or extraction failure can still occur.
-  Fetch MCP is retained as an optional, cache-backed extraction provider, with
-  Dira's existing direct path and source safeguards preserved. Re-run a
-  representative controlled source set before claiming improved reliability.
+## 10. Human-in-the-loop controls and safety
 
-## Outstanding blockers and acceptance gaps
+Suggest Test persists a `SUGGESTED` proposal; the graph does not expose the
+acceptance tool. The scheduled orchestrator filters its tool set and does not
+offer `accept_suggested_test`. These are source-level boundaries, not
+runtime-tested approval guarantees.
 
-- The real Fetch MCP/PostgreSQL integration test remains unverified because
-  `uvx.exe` was unavailable on this machine.
-- Automatic follow-up scheduling is not configured; the protected trigger is
-  not evidence of automatic execution.
-- Production MCP caller identity and authenticated administrator log access
-  remain deferred.
-- Conflicting evidence, approval bypass, agent self-approval, and persisted
-  audit reconstruction still require dedicated tests.
-- Live education retrieval remained unsuccessful for all four sources in the
-  external MCP smoke run; document this limitation rather than claiming Fetch
-  MCP resolves those failures.
+There is no production authenticated teacher identity in the public MCP path:
+its shared bearer resolves to the demo teacher. The legacy
+`POST /api/mcp/approve-note` route returns HTTP 501 and does not implement an
+approval workflow. The public `accept_suggested_test` MCP tool is a separate
+state-changing capability and is not guarded by a verified, individually
+authenticated human principal.
+
+Approval bypass and agent self-approval are **UNVERIFIED**. No test attempted
+those actions. Do not claim that a model-generated action is equivalent to an
+authenticated teacher decision.
+
+## 11. Backend execution logs, audit reconstruction, and cost per run
+
+The logger attempts to write run, model, tool, and retrieval/cache events to
+`agent_activity_logs` when PostgreSQL is available. The exact cost tests and
+their boundaries are listed in scenario 13. They calculate a unit-test amount
+from supplied token counts and configured rates; they do not establish an
+actual per-run bill.
+
+**Assessment: PARTIAL for cost calculation; NOT TESTED for persisted run
+reconstruction.** To verify reconstruction, retain a synthetic run ID and
+show a database-backed query that joins its start, model, tool, and finish/error
+events in order, including proof of what happens when a log insert fails. To
+verify actual per-run model cost, capture real provider-reported token usage
+for that run, persist the associated model and pricing version, and reconcile
+the calculated model charge with provider billing. Report hosting, database,
+and network costs separately; token pricing alone is not total system cost.
+
+## 12. Results and limitations
+
+| Evaluation area | Assessment | Evidence boundary |
+|---|---|---|
+| Focused mocked/unit suite | `PASS` | 52 passed, 1 opt-in test skipped; command and date recorded above |
+| TypeScript type-check | `PASS` | `npm exec tsc -- --noEmit`, exit 0 |
+| Dira MCP registration | `PARTIAL` | `tests/suggest-test-graph.test.mjs` — `registers exactly thirteen public Dira MCP tools` passed over in-memory SDK transport; no independent HTTP invocation |
+| Independent Dira HTTP MCP client | `NOT TESTED` | No separate client discovery/invocation evidence; required evidence is specified in Section 6 |
+| Keeper borrowed MCP | `FAIL` (path absent) / live call `NOT TESTED` | Repository search found no application call site; no live Keeper failure was observed |
+| State-dependent scheduled tool use | `NOT TESTED` | Source has bounded allowlists/limits; no orchestrator behavioural test executed |
+| Evidence-reference validation | `PARTIAL` | Exact mocked test names and limits are in scenario 7; semantic entailment and live ownership are not proven |
+| Open-weight model task | `UNVERIFIED` | Architecture and requirements disagree; no qualifying model execution/log evidence or confirmed criterion |
+| Live education retrieval / Fetch MCP | `UNVERIFIED` | No live source or Fetch request made; Fetch integration case skipped |
+| Human approval / caller identity | `UNVERIFIED` | Demo bearer context only; approval route is not implemented |
+| Persisted audit reconstruction | `NOT TESTED` | No populated database run was inspected; required evidence is specified in Section 11 |
+| Actual per-run cost | `NOT TESTED` | Cost formula and usage parsing tests are mocked; no actual run/bill reconciliation |
+
+The repository's previous EVALS text recorded a live Dira MCP retrieval run
+with failures from four education sources. That report did not include a
+retained raw command log in the repository, and the run was not repeated for
+this audit. Treat those individual source errors as **UNVERIFIED historical
+reports**, not as failures reproduced here. No test failure was reproduced
+during this audit.
+
+## 13. Known unresolved limitation and next step
+
+**Unresolved limitation (confirmed by repository inspection):** Keeper's
+read-only adapter has no application call site. The external borrowed-MCP
+connection-and-invocation criterion is therefore not met by the current
+implementation. No live Keeper attempt was made, so there is no observed
+provider failure to report.
+
+**Next verification step:** after a separately approved implementation task,
+configure a non-sensitive test calendar through the supported OAuth flow,
+discover Keeper tools through the official MCP client, select a discovered
+read-only event tool, and invoke it with a bounded range of no more than 24
+hours. Retain a sanitized result and test evidence without calendar contents or
+credentials.
+
+**Resolution evidence:** a repeatable integration test shows authenticated
+MCP discovery and a successful read-only invocation with the expected bounded
+result shape; missing credentials, unavailable tools, invalid schemas, and
+provider errors fail explicitly. No implementation attempt or live Keeper
+verification was made during this documentation audit.
