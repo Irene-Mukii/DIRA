@@ -34,6 +34,7 @@ yarn-error.log*
 .env*
 !.env.example
 package-lock.json
+!/fetch-mcp-server/package-lock.json
 /data/generated_dev/
 /data/cleaned/generated_dev/
 # vercel
