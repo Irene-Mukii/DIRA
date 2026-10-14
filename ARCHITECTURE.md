@@ -1,4 +1,4 @@
-# Dira — Architecture Summary
+# Dira - Architecture Summary
 
 > **Status:** High-level architecture overview. Detailed system design, flows, data models, and guardrails live in [`SYSTEMARCHITECTURE.md`](./SYSTEMARCHITECTURE.md).
 >
