@@ -165,7 +165,7 @@ function savedAssessment() {
     research_retrieval_status: "success",
     assessed_at: new Date("2026-10-14T08:00:00Z"),
     model: "glm-5.3-flash",
-    prompt_version: "evidence-reasoning-v1",
+    prompt_version: "evidence-reasoning-v2",
     assessment_trigger: "initial",
     change_explanation: "",
     status: "CURRENT",
@@ -212,6 +212,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.restoreAllMocks();
   vi.clearAllMocks();
 });
 
@@ -310,7 +311,99 @@ describe("evidence reasoning", () => {
     )).toBe(true);
   });
 
+  it("explains assessment field limits and logs validation paths for correction", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const invalidRationale = "invalid-model-output-".repeat(160);
+    mocks.createAgentCompletion
+      .mockResolvedValueOnce({
+        content: JSON.stringify(assessmentOutput({
+          rationale: invalidRationale,
+          uncertainty: "This field must be an array.",
+        })),
+        toolCalls: [],
+      })
+      .mockResolvedValueOnce({
+        content: JSON.stringify(assessmentOutput()),
+        toolCalls: [],
+      });
+
+    await expect(assessHypothesis("L001", "TEST001", context)).resolves.toMatchObject({
+      status: "assessed",
+    });
+
+    const initialPrompt = mocks.createAgentCompletion.mock.calls[0][0][0].content;
+    expect(initialPrompt).toContain("at most 3000 characters");
+    expect(initialPrompt).toContain("at most 20 non-empty strings");
+    expect(initialPrompt).toContain("at most 500 characters");
+    expect(initialPrompt).toContain("at most 1000 characters");
+    expect(mocks.createAgentCompletion.mock.calls[1][0].at(-1).content)
+      .toContain("rationale");
+    expect(mocks.createAgentCompletion.mock.calls[1][0].at(-1).content)
+      .toContain("uncertainty");
+
+    const validationLog = warn.mock.calls.find(([message]) =>
+      message === "Evidence model output validation failed",
+    )?.[1];
+    expect(validationLog.issues).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: "too_big",
+        path: "rationale",
+        message: expect.any(String),
+      }),
+      expect.objectContaining({
+        code: "invalid_type",
+        path: "uncertainty",
+        message: expect.any(String),
+      }),
+    ]));
+    expect(JSON.stringify(validationLog)).not.toContain(invalidRationale);
+  });
+
+  it("allows an unchanged reassessment to omit a change explanation", async () => {
+    const current = {
+      ...savedAssessment(),
+      assessment_trigger: "initial",
+    };
+    mocks.poolQuery.mockResolvedValue({ rows: [current] });
+    mocks.clientQuery.mockImplementation(async (query) => {
+      const sql = String(query);
+      if (sql.includes("FROM activity_tests t")) {
+        return {
+          rows: [{
+            test_id: "TEST001",
+            learner_id: "L001",
+            hypothesis: "The learner may share an idea after partner discussion.",
+            outcome_observation_id: "OUT001",
+            observed_outcome: "Shared one idea after discussing with a partner.",
+          }],
+        };
+      }
+      if (sql.includes("FROM hypothesis_assessments") && sql.includes("FOR UPDATE")) {
+        return { rows: [current] };
+      }
+      if (sql.includes("INSERT INTO hypothesis_assessments")) {
+        return { rows: [{ ...current, version: 2, assessment_trigger: "reassessment" }] };
+      }
+      return { rows: [] };
+    });
+    mocks.createAgentCompletion.mockResolvedValue({
+      content: JSON.stringify(assessmentOutput()),
+      toolCalls: [],
+    });
+
+    await expect(assessHypothesis("L001", "TEST001", context)).resolves.toMatchObject({
+      status: "assessed",
+      assessment: {
+        version: 2,
+        trigger: "reassessment",
+        change_explanation: "",
+      },
+    });
+    expect(mocks.createAgentCompletion).toHaveBeenCalledOnce();
+  });
+
   it("fails explicitly when the model fabricates assessment evidence references", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     mocks.createAgentCompletion
       .mockResolvedValueOnce({
         content: JSON.stringify(assessmentOutput({ evidence_refs: ["OTHER"] })),
@@ -327,6 +420,11 @@ describe("evidence reasoning", () => {
       retryable: true,
     });
     expect(mocks.createAgentCompletion).toHaveBeenCalledTimes(2);
+    expect(mocks.createAgentCompletion.mock.calls[1][0].at(-1).content)
+      .toContain("evidence_refs:");
+    expect(warn.mock.calls[0][1].issues).toEqual([
+      { code: "INVALID_MODEL_REFERENCES", path: "evidence_refs" },
+    ]);
     expect(mocks.poolConnect).not.toHaveBeenCalled();
   });
 });
