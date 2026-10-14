@@ -34,8 +34,9 @@ Dira supports teachers in collecting and reviewing evidence about learners over 
 | Scheduled agent trigger | `app/api/internal/follow-up-agent/route.ts` + `lib/agent/orchestrator.ts` | Wake a bounded GLM agent that uses Dira's MCP client to inspect, prepare, and dispatch follow-up work | Agent and protected trigger implemented; hosting scheduler is not selected/configured |
 | Dira MCP tool: observation | `lib/mcp-tools/logObservation.ts` | Validate and persist a teacher observation through the approved tool workflow | Dira-owned tool |
 | Dira MCP tool: test suggestion | `lib/mcp-tools/suggestTest.ts` | Propose a small, practical classroom test grounded in learner evidence | Dira-owned tool |
-| Evidence summary | `lib/mcp-tools/draftPathwayNote.ts` (existing filename) | Build the evidence-grounded content used by the Learner Evidence Card; must not assign a pathway or produce a learner verdict | Dira-owned capability; filename is legacy and can be renamed later |
-| Database | PostgreSQL | System of record for learners, observations, questions/tests, outcomes, and evidence summaries/references | Dira data store; schema/client files are present in the planned structure |
+| Evidence reasoning | `lib/services/evidence-summary.ts` + `lib/services/evidence-reasoning.ts` | Generate a grounded Evidence Card summary on load and versioned, on-demand assessments only after a teacher-recorded test outcome | Dira application services; GLM output is validated and traced to source records |
+| Assessment history | `hypothesis_assessments` | Preserve immutable assessment versions independently from test lifecycle and teacher observations | PostgreSQL table with one `CURRENT` version per test |
+| Database | PostgreSQL | System of record for learners, observations, tests, outcomes, and versioned assessments | Dira data store |
 | Speech-to-text | OpenAI Audio Transcriptions API (MVP only) | Transcribe captured telephone audio | Hosted API; replace before go-live with a security-reviewed self-hosted open-weight model |
 | SMS | Africa's Talking SMS API | Send short teacher reminders and weekly focus messages | External API; selected provider |
 | Outbound voice | Africa's Talking Voice API | Initiate a scheduled teacher follow-up; audio capture is a later phase | Server-side request adapter, demo-gated due dispatcher, and teacher-scoped development status page implemented; credentials, callbacks, teacher authentication/consent, and live calls remain unverified |
@@ -150,9 +151,10 @@ flowchart TD
 7. **Generate, validate, and persist.** The existing Z.AI GLM-5.3 client writes the activity. Application validation checks the structured result, duration, required instructions/outcome/criteria, citations, and that any named educational reference came from a successful retrieval. Invalid output gets one retry and is never replaced with a deterministic template. Valid output is persisted as `SUGGESTED` with the existing evidence links and submission idempotency key before it is returned.
 8. **Teacher decides.** Acceptance updates that persisted suggestion to `ACCEPTED`; regeneration uses the preceding proposal and history as model context, links the new row with `supersedes_test_id`, and persists the replacement. The teacher-facing Suggest Test UI offers accept or suggest-another; no separate defer status is implemented in this workflow.
 9. **Record the outcome.** After trying the activity, the teacher records what happened. Link the outcome to the test where applicable; do not infer an outcome from a calendar event.
-10. **Build the Learner Evidence Card.** The evidence-summary capability assembles questions explored, tests conducted, and observed outcomes from underlying records. Every factual claim is checked against source evidence.
-11. **Teacher reviews the card.** The card supports professional judgement; it is not a verdict, diagnosis, learner ranking, or pathway assignment.
-12. **Review follow-up activity.** `/follow-up-calls` shows the configured development teacher's own queue/provider-submission statuses and recorded observations awaiting review. Provider acceptance is not presented as an answered call. This page is unavailable in production until authenticated teacher sessions are implemented.
+10. **Build the Learner Evidence Card.** The backend assembles authorized records and generates a balanced GLM-5.3-Flash summary when the card loads. Output is structured and record references are checked; duplicate in-flight page requests share one generation.
+11. **Assess a hypothesis only on teacher request.** The backend requires a real linked outcome, optionally retrieves external educational context, validates the GLM classification and references, then atomically saves a new version and supersedes the prior version. Research is context only, never evidence of what happened to the learner.
+12. **Teacher reviews the card.** Test lifecycle labels remain separate from assessment classifications. The card supports professional judgement; it is not a diagnosis, ranking, fixed learner label, or pathway assignment.
+13. **Review follow-up activity.** `/follow-up-calls` shows the configured development teacher's own queue/provider-submission statuses and recorded observations awaiting review. Provider acceptance is not presented as an answered call. This page is unavailable in production until authenticated teacher sessions are implemented.
 
 ### MVP exclusions
 
@@ -200,14 +202,28 @@ flowchart TB
         GETHISTORY[get_previous_suggestions]
         GETRESOURCES[retrieve_education_resources]
         SAVESUGGESTION[persist_test_suggestion]
-        SUMMARY[Evidence summary capability]
+        REASONING[Evidence reasoning service]
+        ASSESS[Versioned hypothesis assessments]
     end
 
     subgraph DATA["Dira data store"]
         PG[(PostgreSQL)]
         RECORDS[Learners, observations, questions, tests, outcomes, evidence references]
+        ASSESSMENTS[hypothesis_assessments versions]
         QUEUE_RECORDS[Closure coverage, closure dates, follow-up queue jobs]
     end
+
+    EC -->|automatic summary request| REASONING
+    EC -->|explicit assess or reassess| REASONING
+    REASONING -->|authorized evidence package| DBACCESS
+    DBACCESS -->|test has recorded outcome| EDU
+    EDU -->|optional sourced context| MODEL
+    REASONING -->|summary or bounded assessment prompt| MODEL
+    MODEL -->|structured result| REASONING
+    REASONING -->|validated result; assessment only| ASSESS
+    ASSESS --> PG
+    ASSESS -->|latest assessment| EC
+    REASONING --> LOG
 
     subgraph EXT["External services — borrowed"]
         GLM[Hosted GLM-5.3 API]

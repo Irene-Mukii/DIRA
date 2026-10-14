@@ -36,6 +36,42 @@ describe("GLM completion requests", () => {
 
     expect(timeout).toHaveBeenCalledWith(75_000);
     expect(vi.mocked(fetch).mock.calls[0]?.[1]?.signal).toBe(signal);
+    expect(JSON.parse(vi.mocked(fetch).mock.calls[0][1].body)).toMatchObject({
+      model: "glm-5.3-flash",
+      reasoning_effort: "low",
+      response_format: { type: "json_object" },
+    });
+  });
+
+  it("keeps JSON response mode off when function tools are provided", async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          choices: [{
+            message: {
+              content: null,
+              tool_calls: [{
+                id: "call-1",
+                type: "function",
+                function: { name: "example_tool", arguments: "{}" },
+              }],
+            },
+          }],
+        }),
+        { status: 200 },
+      ),
+    );
+
+    await createAgentCompletion([{ role: "user", content: "Use the tool" }], [{
+      name: "example_tool",
+      description: "An example function",
+      parameters: { type: "object", properties: {} },
+    }]);
+
+    const requestBody = JSON.parse(vi.mocked(fetch).mock.calls[0][1].body);
+    expect(requestBody.reasoning_effort).toBe("low");
+    expect(requestBody.response_format).toBeUndefined();
+    expect(requestBody.tools).toHaveLength(1);
   });
 
   it("logs the underlying network error and cause without logging credentials", async () => {

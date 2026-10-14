@@ -14,6 +14,7 @@ export default defineConfig({
   test: {
     include: [
       "tests/education-retrieval.test.mjs",
+      "tests/evidence-reasoning.test.mjs",
       "tests/models.test.mjs",
       "tests/suggest-test.test.mjs",
       "tests/suggest-test-graph.test.mjs",
