@@ -2,6 +2,7 @@ import "server-only";
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod/v4";
+import { createRunId, logToolEvent } from "@/lib/agent/logger";
 import type { SuggestTestContext, SuggestTestResult } from "@/lib/mcp-tools/suggestTest";
 import {
   EDUCATION_SOURCES,
@@ -160,6 +161,7 @@ function toolErrorCode(error: unknown): string {
 export function registerSuggestionWorkflowTools(
   server: McpServer,
   resolveContext: SuggestionContextResolver,
+  runId?: string,
 ): void {
   server.registerTool(
     "get_learner_observations",
@@ -232,16 +234,65 @@ export function registerSuggestionWorkflowTools(
     },
     async ({ query }) => {
       const startedAt = Date.now();
-      const retrieval = await retrieveEducationEvidence(query, EDUCATION_SOURCES);
-      console.info("Suggest Test education retrieval complete", {
-        stage: "education_retrieval",
-        status: retrieval.status,
-        relevantResourceCount: retrieval.sources.filter(
-          (source) => source.status === "success",
-        ).length,
-        durationMs: Date.now() - startedAt,
+      const retrievalRunId = runId ?? createRunId();
+      await logToolEvent({
+        run_id: retrievalRunId,
+        agent_action: "education_retrieval",
+        tool_name: "retrieve_education_resources",
+        workflow: "suggest_test",
+        status: "started",
       });
-      return result(retrieval);
+      try {
+        const retrieval = await retrieveEducationEvidence(
+          query,
+          EDUCATION_SOURCES,
+          {
+            runId: retrievalRunId,
+            workflow: "suggest_test",
+          },
+        );
+        const relevantResourceCount = retrieval.sources.filter(
+          (source) => source.status === "success",
+        ).length;
+        console.info("Suggest Test education retrieval complete", {
+          run_id: retrievalRunId,
+          stage: "education_retrieval",
+          status: retrieval.status,
+          relevantResourceCount,
+          durationMs: Date.now() - startedAt,
+        });
+        await logToolEvent({
+          run_id: retrievalRunId,
+          agent_action: "education_retrieval",
+          tool_name: "retrieve_education_resources",
+          workflow: "suggest_test",
+          status: "success",
+          duration_ms: Date.now() - startedAt,
+          tool_output: {
+            retrieval_status: retrieval.status,
+            relevant_resource_count: relevantResourceCount,
+          },
+        });
+        return result(retrieval);
+      } catch (error) {
+        await logToolEvent({
+          run_id: retrievalRunId,
+          agent_action: "education_retrieval",
+          tool_name: "retrieve_education_resources",
+          workflow: "suggest_test",
+          status: "error",
+          duration_ms: Date.now() - startedAt,
+          error: error instanceof Error ? error.name : "UnknownError",
+        });
+        console.error("Suggest Test education retrieval failed", {
+          run_id: retrievalRunId,
+          errorName: error instanceof Error ? error.name : "UnknownError",
+        });
+        return failure(
+          "education_retrieval_failed",
+          "Dira could not retrieve educational resources.",
+        );
+      }
     },
   );
 
