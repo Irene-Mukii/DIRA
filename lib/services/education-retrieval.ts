@@ -1,3 +1,27 @@
+import "server-only";
+
+import { createHash } from "node:crypto";
+import {
+  createRunId,
+  logAgentEvent,
+  type AgentActivityEventType,
+} from "@/lib/agent/logger";
+import {
+  expireStaleEducationMarkdown,
+  getEducationMarkdownMetadata,
+  getFreshEducationMarkdown,
+  MAX_EDUCATION_MARKDOWN_BYTES,
+  saveEducationMarkdown,
+  searchFreshEducationMarkdown,
+  type EducationMarkdownCacheEntry,
+} from "@/lib/services/education-markdown-cache";
+import {
+  connectFetchMcp,
+  FETCH_SERVER_VERSION,
+  FetchMcpError,
+  type FetchMcpSession,
+} from "@/lib/services/fetch-mcp";
+
 export type EducationRetrievalStatus =
   | "success"
   | "partial"
@@ -66,6 +90,9 @@ const MAX_SITEMAP_BYTES = 256_000;
 const MAX_PAGE_BYTES = 128_000;
 const MAX_PAGES_PER_SOURCE = 3;
 const REQUEST_TIMEOUT_MS = 3_500;
+const FETCH_MCP_CONNECT_TIMEOUT_MS = 8_000;
+const FETCH_MCP_REQUEST_TIMEOUT_MS = 8_000;
+const MAX_FETCH_REDIRECTS = 5;
 class EducationRetrievalError extends Error {
   constructor(
     public readonly code: NonNullable<EducationSource["error"]>,
@@ -79,6 +106,13 @@ class EducationRetrievalError extends Error {
 interface RetrievedText {
   content: string;
   httpStatus: number;
+  pageUrl: string;
+}
+
+export interface EducationRetrievalOptions {
+  runId?: string;
+  workflow?: string;
+  fetchMcpEnabled?: boolean;
 }
 
 function sanitizedUrl(value: string): string {
@@ -95,6 +129,9 @@ function isAllowedUrl(value: string, allowedDomain: string): URL | null {
     const url = new URL(value);
     if (
       url.protocol !== "https:" ||
+      url.username !== "" ||
+      url.password !== "" ||
+      url.port !== "" ||
       (url.hostname !== allowedDomain &&
         !url.hostname.endsWith(`.${allowedDomain}`))
     ) {
@@ -184,7 +221,11 @@ async function fetchOfficialText(
       http_status: response.status,
       duration_ms: Date.now() - startedAt,
     });
-    return { content: text, httpStatus: response.status };
+    return {
+      content: text,
+      httpStatus: response.status,
+      pageUrl: response.url,
+    };
   } catch (error) {
     if (error instanceof EducationRetrievalError) throw error;
     const timeout =
@@ -255,6 +296,123 @@ function relevantExcerpt(text: string, queryTerms: string[]): string {
   return (best || text).slice(0, 600);
 }
 
+function markdownText(markdown: string): { title: string | null; text: string } {
+  const title = markdown.match(/^#{1,2}\s+(.+)$/m)?.[1]?.trim().slice(0, 200) ?? null;
+  const text = markdown
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/^\s{0,3}#{1,6}\s+/gm, "")
+    .replace(/[*_~`]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return { title, text };
+}
+
+async function cancelResponseBody(response: Response): Promise<void> {
+  if (!response.body) return;
+  try {
+    await response.body.cancel();
+  } catch (error) {
+    console.warn("Education redirect validation could not cancel response body", {
+      errorName: error instanceof Error ? error.name : "UnknownError",
+    });
+  }
+}
+
+async function validateFetchRedirects(
+  initialUrl: URL,
+  allowedDomain: string,
+  signal: AbortSignal,
+): Promise<URL> {
+  let current = initialUrl;
+  for (
+    let redirectCount = 0;
+    redirectCount <= MAX_FETCH_REDIRECTS;
+    redirectCount += 1
+  ) {
+    const response = await fetch(current, {
+      method: "GET",
+      headers: {
+        accept: "text/html, application/xhtml+xml",
+        range: "bytes=0-0",
+      },
+      redirect: "manual",
+      signal,
+    });
+    const location = response.headers.get("location");
+    if (response.status >= 300 && response.status < 400) {
+      await cancelResponseBody(response);
+      if (!location || redirectCount === MAX_FETCH_REDIRECTS) {
+        throw new EducationRetrievalError("access_restricted", response.status);
+      }
+      const next = isAllowedUrl(new URL(location, current).href, allowedDomain);
+      if (!next) {
+        throw new EducationRetrievalError("access_restricted", response.status);
+      }
+      current = next;
+      continue;
+    }
+
+    await cancelResponseBody(response);
+    if (!response.ok) {
+      const code = response.status === 401 || response.status === 403
+        ? "access_restricted"
+        : "http_error";
+      throw new EducationRetrievalError(code, response.status);
+    }
+    const finalUrl = isAllowedUrl(response.url || current.href, allowedDomain);
+    if (!finalUrl) {
+      throw new EducationRetrievalError("access_restricted", response.status);
+    }
+    return finalUrl;
+  }
+  throw new EducationRetrievalError("access_restricted");
+}
+
+async function logRetrievalActivity(
+  runId: string,
+  workflow: string,
+  eventType: AgentActivityEventType,
+  source: EducationSourceDefinition,
+  status: "started" | "success" | "error",
+  metadata: Record<string, unknown> = {},
+  error?: string,
+  durationMs?: number,
+): Promise<void> {
+  await logAgentEvent({
+    run_id: runId,
+    workflow,
+    event_type: eventType,
+    agent_action: eventType,
+    tool_name: "retrieve_education_resources",
+    status,
+    ...(durationMs !== undefined ? { duration_ms: durationMs } : {}),
+    ...(error ? { error } : {}),
+    metadata: {
+      source_key: source.key,
+      source_domain: source.domain,
+      ...metadata,
+    },
+  });
+}
+
+function mapFetchError(error: unknown): EducationRetrievalError {
+  if (error instanceof EducationRetrievalError) return error;
+  if (error instanceof FetchMcpError) {
+    return new EducationRetrievalError(error.code, error.httpStatus);
+  }
+  return new EducationRetrievalError(
+    error instanceof Error &&
+      (error.name === "TimeoutError" || error.name === "AbortError")
+      ? "timeout"
+      : error instanceof TypeError
+        ? "network_error"
+      : "provider_error",
+  );
+}
+
 function noRelevantResult(
   source: EducationSourceDefinition,
   startedAt: number,
@@ -286,6 +444,9 @@ function noRelevantResult(
 async function retrieveFromSource(
   source: EducationSourceDefinition,
   queryTerms: string[],
+  runId: string,
+  workflow: string,
+  getFetchSession: (() => Promise<FetchMcpSession>) | null,
 ): Promise<EducationSource> {
   const startedAt = Date.now();
   const failed = (
@@ -317,6 +478,285 @@ async function retrieveFromSource(
   try {
     const signal = AbortSignal.timeout(REQUEST_TIMEOUT_MS * 2);
     const root = new URL(source.url);
+    const cacheReads = new Map<string, EducationMarkdownCacheEntry | null>();
+    const readCache = async (
+      cacheUrl: string,
+    ): Promise<EducationMarkdownCacheEntry | null> => {
+      if (!getFetchSession) return null;
+      if (cacheReads.has(cacheUrl)) return cacheReads.get(cacheUrl) ?? null;
+      try {
+        const cached = await getFreshEducationMarkdown(source.key, cacheUrl);
+        cacheReads.set(cacheUrl, cached);
+        if (cached) {
+          await logRetrievalActivity(
+            runId,
+            workflow,
+            "cache_hit",
+            source,
+            "success",
+            {
+              canonical_url: sanitizedUrl(cacheUrl),
+              content_bytes: cached.contentBytes,
+              content_sha256: cached.contentSha256,
+            },
+          );
+          return cached;
+        }
+        const metadata = await getEducationMarkdownMetadata(source.key, cacheUrl);
+        await logRetrievalActivity(
+          runId,
+          workflow,
+          metadata ? "cache_refresh" : "cache_miss",
+          source,
+          "success",
+          {
+            canonical_url: sanitizedUrl(cacheUrl),
+            has_markdown: metadata?.hasMarkdown ?? false,
+            last_successful_at: metadata?.lastSuccessfulAt ?? null,
+          },
+        );
+        return null;
+      } catch (error) {
+        cacheReads.set(cacheUrl, null);
+        await logRetrievalActivity(
+          runId,
+          workflow,
+          "cache_refresh_failed",
+          source,
+          "error",
+          { canonical_url: sanitizedUrl(cacheUrl), phase: "cache_read" },
+          error instanceof Error ? error.name : "UnknownError",
+        );
+        return null;
+      }
+    };
+    if (getFetchSession && queryTerms.length > 0) {
+      try {
+        const cachedEntries = await searchFreshEducationMarkdown(
+          source.key,
+          queryTerms,
+        );
+        let invalidCachedUrls = 0;
+        const relevantCachedEntries = cachedEntries.flatMap((entry) => {
+          const cachedUrl = isAllowedUrl(entry.canonicalUrl, source.domain);
+          if (
+            entry.sourceKey !== source.key ||
+            !cachedUrl ||
+            cachedUrl.href !== entry.canonicalUrl
+          ) {
+            invalidCachedUrls += 1;
+            return [];
+          }
+          const content = markdownText(entry.markdown);
+          if (!content.text) return [];
+          const score = relevanceScore(
+            `${entry.title ?? ""} ${content.title ?? ""} ${content.text}`,
+            queryTerms,
+          );
+          return score > 0
+            ? [{ entry, content, score }]
+            : [];
+        }).sort((left, right) => right.score - left.score);
+        if (invalidCachedUrls > 0) {
+          await logRetrievalActivity(
+            runId,
+            workflow,
+            "cache_refresh_failed",
+            source,
+            "error",
+            {
+              phase: "cache_search_validation",
+              invalid_entries: invalidCachedUrls,
+            },
+            "invalid_cached_url",
+          );
+        }
+        const bestCached = relevantCachedEntries[0];
+        await logRetrievalActivity(
+          runId,
+          workflow,
+          bestCached ? "cache_hit" : "cache_miss",
+          source,
+          "success",
+          {
+            lookup_mode: "cached_page_search",
+            pages_examined: cachedEntries.length,
+            ...(bestCached
+              ? {
+                  canonical_url: sanitizedUrl(bestCached.entry.canonicalUrl),
+                  content_bytes: bestCached.entry.contentBytes,
+                  content_sha256: bestCached.entry.contentSha256,
+                }
+              : {}),
+          },
+        );
+        if (bestCached) {
+          const result: EducationSource = {
+            key: source.key,
+            name: source.name,
+            url: source.url,
+            status: "success",
+            retrieved_at: new Date().toISOString(),
+            title: bestCached.content.title ?? bestCached.entry.title,
+            page_url: bestCached.entry.canonicalUrl,
+            excerpt: relevantExcerpt(bestCached.content.text, queryTerms),
+            error: null,
+            http_status: null,
+            retrieval_duration_ms: Date.now() - startedAt,
+          };
+          console.info("Education source retrieval complete", {
+            source: source.key,
+            target_url: sanitizedUrl(bestCached.entry.canonicalUrl),
+            status: result.status,
+            cache_hit: true,
+            duration_ms: result.retrieval_duration_ms,
+          });
+          return result;
+        }
+      } catch (error) {
+        await logRetrievalActivity(
+          runId,
+          workflow,
+          "cache_refresh_failed",
+          source,
+          "error",
+          { phase: "cache_search", lookup_mode: "cached_page_search" },
+          error instanceof Error ? error.name : "UnknownError",
+        );
+      }
+    }
+    const retrieveMarkdown = async (
+      cacheUrl: string,
+      pageUrl: URL,
+    ): Promise<{
+      title: string | null;
+      text: string;
+      score: number;
+      pageUrl: URL;
+    }> => {
+      if (!getFetchSession) throw new FetchMcpError("provider_error");
+      const fetchStartedAt = Date.now();
+      await logRetrievalActivity(
+        runId,
+        workflow,
+        "fetch_request",
+        source,
+        "started",
+        {
+          requested_url: sanitizedUrl(pageUrl.href),
+          server_version: FETCH_SERVER_VERSION,
+        },
+      );
+      try {
+        const safePageUrl = await validateFetchRedirects(
+          pageUrl,
+          source.domain,
+          AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+        );
+        const activeSession = await getFetchSession();
+        const fetched = await activeSession.fetchMarkdown(
+          safePageUrl.href,
+          MAX_PAGE_BYTES,
+          FETCH_MCP_REQUEST_TIMEOUT_MS,
+        );
+        const echoedUrl = isAllowedUrl(fetched.pageUrl, source.domain);
+        if (!echoedUrl || echoedUrl.href !== safePageUrl.href) {
+          throw new EducationRetrievalError("access_restricted");
+        }
+        const contentBytes = Buffer.byteLength(fetched.markdown, "utf8");
+        const content = markdownText(fetched.markdown);
+        if (
+          contentBytes < 1 ||
+          contentBytes > MAX_EDUCATION_MARKDOWN_BYTES ||
+          !content.text
+        ) {
+          throw new EducationRetrievalError(
+            contentBytes > MAX_EDUCATION_MARKDOWN_BYTES
+              ? "response_too_large"
+              : "content_extraction_failure",
+          );
+        }
+        await logRetrievalActivity(
+          runId,
+          workflow,
+          "fetch_request",
+          source,
+          "success",
+          {
+            page_url: sanitizedUrl(safePageUrl.href),
+            markdown_bytes: contentBytes,
+            server_version: FETCH_SERVER_VERSION,
+          },
+          undefined,
+          Date.now() - fetchStartedAt,
+        );
+        const contentSha256 = createHash("sha256")
+          .update(fetched.markdown)
+          .digest("hex");
+        try {
+          await saveEducationMarkdown({
+            sourceKey: source.key,
+            canonicalUrl: cacheUrl,
+            title: content.title,
+            markdown: fetched.markdown,
+            contentSha256,
+            contentBytes,
+          });
+          await logRetrievalActivity(
+            runId,
+            workflow,
+            "cache_refresh",
+            source,
+            "success",
+            {
+              canonical_url: sanitizedUrl(cacheUrl),
+              content_bytes: contentBytes,
+              content_sha256: contentSha256,
+            },
+          );
+        } catch (error) {
+          await logRetrievalActivity(
+            runId,
+            workflow,
+            "cache_refresh_failed",
+            source,
+            "error",
+            { canonical_url: sanitizedUrl(cacheUrl), phase: "cache_write" },
+            error instanceof Error ? error.name : "UnknownError",
+          );
+        }
+        return {
+          ...content,
+          score: relevanceScore(`${content.title ?? ""} ${content.text}`, queryTerms),
+          pageUrl: safePageUrl,
+        };
+      } catch (error) {
+        const retrievalError = mapFetchError(error);
+        await logRetrievalActivity(
+          runId,
+          workflow,
+          "cache_refresh_failed",
+          source,
+          "error",
+          { canonical_url: sanitizedUrl(cacheUrl), phase: "fetch_mcp" },
+          retrievalError.code,
+        );
+        await logRetrievalActivity(
+          runId,
+          workflow,
+          "fetch_request",
+          source,
+          "error",
+          {
+            requested_url: sanitizedUrl(pageUrl.href),
+            server_version: FETCH_SERVER_VERSION,
+          },
+          retrievalError.code,
+          Date.now() - fetchStartedAt,
+        );
+        throw retrievalError;
+      }
+    };
     let sitemap: RetrievedText | null = null;
     let discoveryError: EducationRetrievalError | null = null;
     try {
@@ -360,6 +800,83 @@ async function retrieveFromSource(
       }
     }
     if (!sitemap) {
+      if (
+        getFetchSession &&
+        discoveryError?.code === "response_too_large"
+      ) {
+        const homepageCache = await readCache(root.href);
+        let homepage: {
+          title: string | null;
+          text: string;
+          score: number;
+          pageUrl: URL;
+          httpStatus: number | null;
+        } | null = null;
+        if (homepageCache) {
+          const content = markdownText(homepageCache.markdown);
+          homepage = {
+            ...content,
+            score: relevanceScore(
+              `${content.title ?? ""} ${content.text}`,
+              queryTerms,
+            ),
+            pageUrl: new URL(homepageCache.canonicalUrl),
+            httpStatus: null,
+          };
+        } else {
+          try {
+            const directHomepage = await fetchOfficialText(
+              root,
+              source.domain,
+              MAX_PAGE_BYTES,
+              signal,
+            );
+            if (directHomepage) {
+              const content = plainText(directHomepage.content);
+              homepage = {
+                ...content,
+                score: relevanceScore(
+                  `${content.title ?? ""} ${content.text}`,
+                  queryTerms,
+                ),
+                pageUrl: new URL(directHomepage.pageUrl),
+                httpStatus: directHomepage.httpStatus,
+              };
+            }
+          } catch (error) {
+            if (error instanceof EducationRetrievalError) {
+              discoveryError = error;
+            } else {
+              throw error;
+            }
+          }
+          if (homepage) {
+            try {
+              const fetched = await retrieveMarkdown(root.href, homepage.pageUrl);
+              if (fetched.score >= homepage.score) {
+                homepage = { ...fetched, httpStatus: homepage.httpStatus };
+              }
+            } catch {
+              // The already validated direct extraction remains a safe fallback.
+            }
+          }
+        }
+        if (homepage && homepage.score > 0) {
+          return {
+            key: source.key,
+            name: source.name,
+            url: source.url,
+            status: "success",
+            retrieved_at: new Date().toISOString(),
+            title: homepage.title,
+            page_url: homepage.pageUrl.href,
+            excerpt: relevantExcerpt(homepage.text, queryTerms),
+            error: null,
+            http_status: homepage.httpStatus,
+            retrieval_duration_ms: Date.now() - startedAt,
+          };
+        }
+      }
       return failed(
         discoveryError?.code ?? "discovery_failure",
         discoveryError?.httpStatus ?? null,
@@ -400,14 +917,37 @@ async function retrieveFromSource(
     ).values()].slice(0, MAX_PAGES_PER_SOURCE);
     let best: {
       url: URL;
+      cacheUrl: string;
       title: string | null;
       text: string;
       score: number;
-      httpStatus: number;
+      httpStatus: number | null;
+      fromCache: boolean;
     } | null = null;
     let fetchedPages = 0;
     let lastError: EducationRetrievalError | null = null;
     for (const pageUrl of candidates) {
+      const cached = await readCache(pageUrl.href);
+      if (cached) {
+        const content = markdownText(cached.markdown);
+        if (!content.text) continue;
+        fetchedPages += 1;
+        const score = relevanceScore(
+          `${content.title ?? ""} ${content.text}`,
+          queryTerms,
+        );
+        if (!best || score > best.score) {
+          best = {
+            url: new URL(cached.canonicalUrl),
+            cacheUrl: pageUrl.href,
+            ...content,
+            score,
+            httpStatus: null,
+            fromCache: true,
+          };
+        }
+        continue;
+      }
       try {
         const page = await fetchOfficialText(
           pageUrl,
@@ -421,11 +961,43 @@ async function retrieveFromSource(
         fetchedPages += 1;
         const score = relevanceScore(`${content.title ?? ""} ${content.text}`, queryTerms);
         if (!best || score > best.score) {
-          best = { url: pageUrl, ...content, score, httpStatus: page.httpStatus };
+          best = {
+            url: new URL(page.pageUrl),
+            cacheUrl: pageUrl.href,
+            ...content,
+            score,
+            httpStatus: page.httpStatus,
+            fromCache: false,
+          };
         }
       } catch (error) {
         if (error instanceof EducationRetrievalError) lastError = error;
         continue;
+      }
+    }
+    if (
+      fetchedPages === 0 &&
+      lastError &&
+      getFetchSession &&
+      candidates.length > 0
+    ) {
+      try {
+        const fetched = await retrieveMarkdown(
+          candidates[0].href,
+          candidates[0],
+        );
+        if (fetched.text) {
+          best = {
+            ...fetched,
+            url: fetched.pageUrl,
+            cacheUrl: candidates[0].href,
+            httpStatus: lastError.httpStatus,
+            fromCache: false,
+          };
+          fetchedPages = 1;
+        }
+      } catch (error) {
+        lastError = mapFetchError(error);
       }
     }
     if (fetchedPages === 0 && lastError) {
@@ -440,6 +1012,20 @@ async function retrieveFromSource(
         startedAt,
         best?.httpStatus ?? sitemap.httpStatus,
       );
+    }
+    if (getFetchSession && !best.fromCache) {
+      try {
+        const fetched = await retrieveMarkdown(best.cacheUrl, best.url);
+        if (fetched.score >= best.score) {
+          best = {
+            ...best,
+            ...fetched,
+            url: fetched.pageUrl,
+          };
+        }
+      } catch {
+        // Preserve the existing validated direct result when Fetch MCP fails.
+      }
     }
     const result: EducationSource = {
       key: source.key,
@@ -478,15 +1064,67 @@ async function retrieveFromSource(
 export async function retrieveEducationEvidence(
   query: string,
   sources: readonly EducationSourceDefinition[],
+  options: EducationRetrievalOptions = {},
 ): Promise<{ status: EducationRetrievalStatus; sources: EducationSource[] }> {
+  const runId = options.runId ?? createRunId();
+  const workflow = options.workflow ?? "education_retrieval";
+  const fetchEnabled =
+    options.fetchMcpEnabled ?? process.env.FETCH_MCP_ENABLED === "true";
+  const fetchSessionState: { promise: Promise<FetchMcpSession> | null } = {
+    promise: null,
+  };
+  const getFetchSession = fetchEnabled
+    ? () => {
+        if (!fetchSessionState.promise) {
+          fetchSessionState.promise = connectFetchMcp(
+            FETCH_MCP_CONNECT_TIMEOUT_MS,
+          );
+        }
+        return fetchSessionState.promise;
+      }
+    : null;
+
+  if (fetchEnabled) {
+    try {
+      await expireStaleEducationMarkdown();
+    } catch (error) {
+      await logAgentEvent({
+        run_id: runId,
+        workflow,
+        event_type: "cache_refresh_failed",
+        agent_action: "cache_expiry_failed",
+        tool_name: "retrieve_education_resources",
+        status: "error",
+        error: error instanceof Error ? error.name : "UnknownError",
+      });
+    }
+  }
   const normalizedQuery = query.replaceAll("_", " ").toLowerCase();
   const queryTerms = [...new Set(
     normalizedQuery.split(/\s+/).filter((term) => term.length > 2),
   )].slice(0, 24);
 
   const results = await Promise.all(
-    sources.map((source) => retrieveFromSource(source, queryTerms)),
+    sources.map((source) =>
+      retrieveFromSource(source, queryTerms, runId, workflow, getFetchSession),
+    ),
   );
+  if (fetchSessionState.promise) {
+    await fetchSessionState.promise.then(
+      async (session) => {
+        try {
+          await session.close();
+        } catch (error) {
+          console.error("Fetch MCP session cleanup failed:", {
+            errorName: error instanceof Error ? error.name : "UnknownError",
+          });
+        }
+      },
+      () => {
+        // The source-level Fetch MCP failure has already been logged.
+      },
+    );
+  }
   const successful = results.filter((source) => source.status === "success").length;
   const queried = results.filter((source) => source.status !== "failed").length;
   const status: EducationRetrievalStatus =
