@@ -53,22 +53,22 @@ Accordingly, Keeper is selected but not integrated into a running workflow.
 
 ## 2. Tool inventory
 
-| Tool name | Input | Success result | Side effect and boundary |
-|---|---|---|---|
-| `log_observation` | Learner ID, observation type, original text, observed time and submission ID; optional calendar, subject, term, context and accepted-test link | Observation ID, duplicate flag and review status | Inserts once by submission ID; validates enrollment and linked records using the server-resolved demo teacher |
-| `suggest_test` | Learner ID and submission ID | Suggest Test result; valid output is persisted as `SUGGESTED` | Starts the bounded LangGraph workflow; requires a server-resolved demo context |
-| `get_learner_observations` | Learner ID | Grade/stream context and observation records | Read-only; class scope is derived from the server-resolved demo teacher |
-| `get_previous_suggestions` | Learner ID | Prior suggestions, statuses and linked evidence IDs | Read-only; learner scope is derived server-side |
-| `retrieve_education_resources` | Bounded query string | Overall status and one result per configured source, including source status/error metadata | Read-only to Dira data; makes bounded requests to approved education domains, optionally through Fetch MCP |
-| `persist_test_suggestion` | Learner ID, submission ID, validated suggestion; optional superseded test ID | Persisted proposal/result | Writes a `SUGGESTED` test and evidence links after server-side ownership and submission checks |
-| `regenerate_test_suggestion` | Learner ID, submission ID, proposal hash; optional superseded test ID | Replacement suggestion/result | Runs the workflow again and persists a linked `SUGGESTED` row |
-| `accept_suggested_test` | Learner ID, submission ID, proposal hash and planned date; optional superseded test ID | Accepted test result | Transitions the selected persisted proposal to `ACCEPTED`; no authenticated human principal is established by the shared bearer token |
-| `build_evidence_summary` | Learner ID | Current saved tests, citations, retrieval outcomes and teacher-recorded outcomes | Read-only; selected learner is scoped to the demo teacher |
-| `prepare_daily_follow_up_queue` | No arguments | Queue-preparation counts/status | Creates or refreshes eligible follow-up jobs; never places a call |
-| `list_due_follow_ups` | Optional integer `limit` from 1 to 20 (default 10) | `{items, count}` | Read-only list for the demo teacher; dispatch rechecks eligibility |
-| `dispatch_one_due_follow_up` | No arguments | Result for at most one call attempt | State-changing and potentially chargeable; blocked in production demo mode and guarded by server-side eligibility/claim checks |
-| `save_call_observation_drafts` | Recording UUID and 1–30 quoted segments (text required; spoken name and observation type optional) | Draft-save result | Writes unconfirmed review drafts; the server checks the recording and resolves learner matches |
-| Keeper tools such as `get_event_count` / `get_events` | Provider-specific bounded date range | Provider-specific calendar result | Borrowed server, not included in Dira's 13; **not currently invoked by an application workflow** |
+| Tool name                                             | Input                                                                                                                                          | Success result                                                                              | Side effect and boundary                                                                                                              |
+| ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `log_observation`                                     | Learner ID, observation type, original text, observed time and submission ID; optional calendar, subject, term, context and accepted-test link | Observation ID, duplicate flag and review status                                            | Inserts once by submission ID; validates enrollment and linked records using the server-resolved demo teacher                         |
+| `suggest_test`                                        | Learner ID and submission ID                                                                                                                   | Suggest Test result; valid output is persisted as `SUGGESTED`                               | Starts the bounded LangGraph workflow; requires a server-resolved demo context                                                        |
+| `get_learner_observations`                            | Learner ID                                                                                                                                     | Grade/stream context and observation records                                                | Read-only; class scope is derived from the server-resolved demo teacher                                                               |
+| `get_previous_suggestions`                            | Learner ID                                                                                                                                     | Prior suggestions, statuses and linked evidence IDs                                         | Read-only; learner scope is derived server-side                                                                                       |
+| `retrieve_education_resources`                        | Bounded query string                                                                                                                           | Overall status and one result per configured source, including source status/error metadata | Read-only to Dira data; makes bounded requests to approved education domains, optionally through Fetch MCP                            |
+| `persist_test_suggestion`                             | Learner ID, submission ID, validated suggestion; optional superseded test ID                                                                   | Persisted proposal/result                                                                   | Writes a `SUGGESTED` test and evidence links after server-side ownership and submission checks                                        |
+| `regenerate_test_suggestion`                          | Learner ID, submission ID, proposal hash; optional superseded test ID                                                                          | Replacement suggestion/result                                                               | Runs the workflow again and persists a linked `SUGGESTED` row                                                                         |
+| `accept_suggested_test`                               | Learner ID, submission ID, proposal hash and planned date; optional superseded test ID                                                         | Accepted test result                                                                        | Transitions the selected persisted proposal to `ACCEPTED`; no authenticated human principal is established by the shared bearer token |
+| `build_evidence_summary`                              | Learner ID                                                                                                                                     | Current saved tests, citations, retrieval outcomes and teacher-recorded outcomes            | Read-only; selected learner is scoped to the demo teacher                                                                             |
+| `prepare_daily_follow_up_queue`                       | No arguments                                                                                                                                   | Queue-preparation counts/status                                                             | Creates or refreshes eligible follow-up jobs; never places a call                                                                     |
+| `list_due_follow_ups`                                 | Optional integer `limit` from 1 to 20 (default 10)                                                                                             | `{items, count}`                                                                            | Read-only list for the demo teacher; dispatch rechecks eligibility                                                                    |
+| `dispatch_one_due_follow_up`                          | No arguments                                                                                                                                   | Result for at most one call attempt                                                         | State-changing and potentially chargeable; blocked in production demo mode and guarded by server-side eligibility/claim checks        |
+| `save_call_observation_drafts`                        | Recording UUID and 1–30 quoted segments (text required; spoken name and observation type optional)                                             | Draft-save result                                                                           | Writes unconfirmed review drafts; the server checks the recording and resolves learner matches                                        |
+| Keeper tools such as `get_event_count` / `get_events` | Provider-specific bounded date range                                                                                                           | Provider-specific calendar result                                                           | Borrowed server, not included in Dira's 13; **not currently invoked by an application workflow**                                      |
 
 The first 13 rows are the exact Dira-owned registration inventory. Keeper is a
 separate borrowed server and is not included in that count. Suggestion and
@@ -237,7 +237,13 @@ flowchart LR
   "test_id": "persisted SUGGESTED test ID",
   "retrieval_status": "success | partial | no_relevant_results | failed",
   "educational_sources": [
-    {"key": "EEF", "status": "success", "title": "Retrieved page", "page_url": "exact official URL", "excerpt": "short relevant excerpt"}
+    {
+      "key": "EEF",
+      "status": "success",
+      "title": "Retrieved page",
+      "page_url": "exact official URL",
+      "excerpt": "short relevant excerpt"
+    }
   ],
   "limitations": ["What the evidence does not establish"],
   "suggested_activity": {
@@ -282,7 +288,7 @@ the UI.
 Takes a bounded query string with no learner ID:
 
 ```json
-{"query":"structured classroom discussion"}
+{ "query": "structured classroom discussion" }
 ```
 
 The structured result has top-level status `success`, `partial`,
@@ -306,12 +312,16 @@ status. The service does not claim that a live source was reached unless the
 request actually returned content.
 
 Fetch MCP is an optional backend behind this service, not a parallel retrieval
-pipeline. It is disabled unless `FETCH_MCP_ENABLED=true`; the default executable
-is `uvx`, overridable with `FETCH_MCP_COMMAND`. Dira launches the pinned
-`mcp-server-fetch==2026.10.10` over stdio. On Windows it sets
-`PYTHONIOENCODING=utf-8`. Dira retains source selection, domain/redirect
-validation, relevance ranking, bounded requests, result validation, and the
-existing public tool response. When Fetch MCP is enabled, before making source
+pipeline. It is disabled unless `FETCH_MCP_ENABLED=true`. Local development
+defaults to stdio and launches the pinned `mcp-server-fetch==2026.10.10`
+through `uvx` (overridable with `FETCH_MCP_COMMAND`). For deployment, Dira can
+use authenticated Streamable HTTP with `FETCH_MCP_TRANSPORT=http`,
+`FETCH_MCP_URL`, and server-only `FETCH_MCP_TOKEN`; see
+`fetch-mcp-server/README.md` for the Docker/Render gateway setup. On Windows
+Dira sets `PYTHONIOENCODING=utf-8`. Dira retains source selection,
+domain/redirect validation, relevance ranking, bounded requests, result
+validation, and the existing public tool response. When Fetch MCP is enabled,
+before making source
 URL requests Dira searches up to 12 fresh cached Markdown pages per source for
 query terms and ranks matches using the same relevance scoring as live
 results. A relevant cached page is returned immediately, avoiding sitemap,
@@ -379,7 +389,7 @@ a teacher-recorded linked outcome.
 ### Input
 
 ```json
-{"learner_id": "string, required; explicit learner selection"}
+{ "learner_id": "string, required; explicit learner selection" }
 ```
 
 This read-only tool returns the selected learner's saved tests, linked

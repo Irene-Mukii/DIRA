@@ -30,8 +30,8 @@ education-source request was made during this audit.
 - Node dependencies were already installed in the repository.
 - The focused test suite uses the explicit include list in
   `vitest.unit.config.mjs`. The model, database, voice-provider and retrieval
-  behaviours it tests are mocked or otherwise isolated; its opt-in
-  `tests/fetch-mcp.integration.test.mjs` case was skipped.
+  behaviours it tests are mocked or otherwise isolated; both opt-in cases in
+  `tests/fetch-mcp.integration.test.mjs` were skipped.
 - The full `npm run test:follow-ups` suite is not equivalent to the focused
   suite. Its global setup requires `DIRA_TEST_DATABASE_URL` targeting local
   `dira_dev` as user `dira_dev` on port 5433, and follow-up tests insert and
@@ -39,7 +39,8 @@ education-source request was made during this audit.
   effects.
 - Live GLM, OpenAI, Africa's Talking, public MCP, Keeper, and Fetch MCP checks
   require their respective credentials, endpoints, network access, and—in the
-  Fetch/PostgreSQL case—local database and `uvx`. These were not exercised here.
+  Fetch/PostgreSQL case—local database and `uvx`. Live Fetch connections were
+  not exercised here.
 - Do not use production learner data for evaluation. Use synthetic records and
   an isolated local database only after confirming the test target.
 
@@ -49,28 +50,34 @@ Commands executed on 2026-10-14:
 
 | Command | Observed result |
 |---|---|
-| `npm run test:suggest-test` | Exit 0; 12 test files passed, 1 skipped; 52 tests passed, 1 skipped. The skipped test is the opt-in Fetch MCP/PostgreSQL integration. |
+| `npm run test:suggest-test` | Exit 0; 13 test files passed, 1 file skipped; 62 tests passed, 2 skipped. Both skipped cases are the opt-in Fetch MCP/PostgreSQL and remote Render integration tests. |
+| `npm --prefix fetch-mcp-server test` | Exit 0; 5 gateway tests passed, 0 failed or skipped. Upstream Fetch and remote connectivity are mocked. |
+| `npm run test:fetch-mcp -- --run tests/fetch-mcp.integration.test.mjs` | Exit 0; both opt-in live integration cases registered and skipped because their run flags were not enabled. |
 | `npm exec tsc -- --noEmit` | Exit 0; no TypeScript diagnostics were printed. |
+| `npm run build` | Exit 0; production build completed. Next.js emitted root-detection and metadata viewport/themeColor warnings. |
+| `docker build --progress plain -f fetch-mcp-server\Dockerfile -t dira-fetch-mcp-local fetch-mcp-server` | Exit 0; image built with the pinned `mcp-server-fetch==2026.10.10` package. |
+| `docker run --rm --entrypoint /opt/fetch-venv/bin/mcp-server-fetch dira-fetch-mcp-local --help` | Exit 0; the Fetch executable is present in the built image. This does not test live source access or Render connectivity. |
 
 The focused suite covers retrieval/cache behavior, evidence reasoning,
 mocked model requests and cost calculation, voice configuration/demo routes,
 staging-import validation, the Suggest Test workflow, and registration of the
-public Dira MCP tools. It is not a full browser E2E run, a production build, or
-a live-provider test.
+public Dira MCP tools. It is not a full browser E2E run or a live-provider
+test.
 
 Not run: `npm run test:follow-ups`, `npm run mcp:test:external`, `npm run mcp:test`,
-`npm run build`, live provider requests, and database-backed audit
-reconstruction. The external MCP smoke script invokes live education
-retrieval; no such external request was necessary to establish the focused
-suite's result.
+live provider requests, and database-backed audit reconstruction. The external
+MCP smoke script invokes live education retrieval; no such external request
+was necessary to establish the focused suite's result. No Render service was
+deployed, and no production Vercel configuration was changed.
 
 ## 4. Test inventory and coverage
 
-The 13 files selected by `vitest.unit.config.mjs` are:
+The 14 files selected by `vitest.unit.config.mjs` are:
 
 - `tests/education-retrieval.test.mjs`
 - `tests/education-markdown-cache.test.mjs`
-- `tests/fetch-mcp.integration.test.mjs` — `retrieves and caches an approved public source, then serves a cache hit` (opt-in; skipped)
+- `tests/fetch-mcp-client.test.mjs` — mocked stdio/HTTP transport contract, configuration validation, and Fetch failure logging
+- `tests/fetch-mcp.integration.test.mjs` — local stdio/PostgreSQL and remote Render live integration cases (both opt-in; skipped)
 - `tests/evidence-reasoning.test.mjs`
 - `tests/models.test.mjs`
 - `tests/model-cost.test.mjs`
@@ -101,7 +108,7 @@ in this table has a full `PASS`.
 | 2 | **Missing evidence:** an accepted test without a recorded outcome is not assessed, and the model/retrieval are not called. | `tests/evidence-reasoning.test.mjs` — `evidence reasoning > does not call the model or retrieval when the test has no recorded outcome` | Passed with mocked database, model, and retrieval dependencies for an accepted test lacking an outcome. It does not test Suggest Test with zero observations or prove live database behaviour. | `PARTIAL` |
 | 3 | **State-dependent tool selection:** the scheduled agent chooses or withholds tools based on trigger and returned state, and never dispatches without due work. | No scheduled-orchestrator behavioural test is in the focused config. | Source inspection confirms trigger-specific allowlists and a due-count dispatch gate, but no run tested decisions against changed tool results. | `NOT TESTED` |
 | 4 | **Model failure:** a model outage is surfaced and no fallback proposal is persisted. | `tests/suggest-test-graph.test.mjs` — `LangGraph Suggest Test workflow > propagates a model outage and does not save a fallback proposal` | Passed with the model completion mocked to reject. It does not test a live provider outage or arbitrary MCP-tool failures. | `PARTIAL` |
-| 5 | **Retrieval failure recovery:** a failed optional cache refresh may use independently retrieved direct content, without treating failed refresh content as fresh. | `tests/education-retrieval.test.mjs` — `education source retrieval > falls back to safe direct content when a stale cache refresh fails` | Passed with mocked Fetch MCP/cache and mocked direct HTTP responses. It does not demonstrate a real timeout, provider retry, or recovery from an uncertain write. | `PARTIAL` |
+| 5 | **Retrieval failure recovery and transport contract:** a failed optional cache refresh may use independently retrieved direct content without hiding Fetch failure; local stdio and remote HTTP use the same tool contract. | `tests/education-retrieval.test.mjs` — `falls back to safe direct content when a stale cache refresh fails`; `tests/fetch-mcp-client.test.mjs`; `fetch-mcp-server/server.test.mjs` | Mocked tests passed for fallback evidence, transport configuration and normalized calls, and gateway auth/discovery/invocation. They do not demonstrate the official Fetch process, real Render connectivity, a real timeout, or recovery from an uncertain write. | `PARTIAL` |
 | 6 | **Contradictory evidence:** conflicting records remain visible and are not discarded or resolved into an unsupported conclusion. | `lib/mcp-tools/suggestTest.test.ts` — `retains different reports instead of discarding apparent contradictions`; excluded from `vitest.unit.config.mjs`. | Test exists but was not run. No executed evaluation established how conflicting evidence appears in generated or persisted output. | `NOT TESTED` |
 | 7 | **Citation integrity:** unsupported evidence/source references are rejected or retried once; persist only output that passes reference validation. | `tests/suggest-test-graph.test.mjs` — `retries once when a generated citation is not among retrieved sources`; `never persists when output remains invalid after the bounded retry`; `tests/evidence-reasoning.test.mjs` — `fails explicitly when the model fabricates assessment evidence references` | All named tests passed with mocked generation, retrieval, and persistence dependencies. They prove reference-membership checks and bounded retry in those paths, not semantic entailment of every natural-language claim or live ownership checks. | `PARTIAL` |
 | 8 | **Approval enforcement:** accepting a proposal requires an individually authenticated teacher decision; the agent cannot self-approve. | No approval-bypass or self-approval test was run. Source inspection finds the legacy `/api/mcp/approve-note` route returns 501; the public accept tool uses the shared demo bearer context. | No authenticated approval guarantee is demonstrated. Suggest Test and scheduled-agent tool allowlists omit acceptance, but those source boundaries do not prove runtime enforcement across the public accept tool. | `UNVERIFIED` |
@@ -270,7 +277,8 @@ and network costs separately; token pricing alone is not total system cost.
 
 | Evaluation area | Assessment | Evidence boundary |
 |---|---|---|
-| Focused mocked/unit suite | `PASS` | 52 passed, 1 opt-in test skipped; command and date recorded above |
+| Focused mocked/unit suite | `PASS` | 62 passed, 2 opt-in live tests skipped; command and date recorded above |
+| Fetch HTTP gateway tests | `PASS` | 5 tests passed against a mocked upstream MCP client; no live upstream connection |
 | TypeScript type-check | `PASS` | `npm exec tsc -- --noEmit`, exit 0 |
 | Dira MCP registration | `PARTIAL` | `tests/suggest-test-graph.test.mjs` — `registers exactly thirteen public Dira MCP tools` passed over in-memory SDK transport; no independent HTTP invocation |
 | Independent Dira HTTP MCP client | `NOT TESTED` | No separate client discovery/invocation evidence; required evidence is specified in Section 6 |
@@ -278,7 +286,7 @@ and network costs separately; token pricing alone is not total system cost.
 | State-dependent scheduled tool use | `NOT TESTED` | Source has bounded allowlists/limits; no orchestrator behavioural test executed |
 | Evidence-reference validation | `PARTIAL` | Exact mocked test names and limits are in scenario 7; semantic entailment and live ownership are not proven |
 | Open-weight model task | `UNVERIFIED` | Architecture and requirements disagree; no qualifying model execution/log evidence or confirmed criterion |
-| Live education retrieval / Fetch MCP | `UNVERIFIED` | No live source or Fetch request made; Fetch integration case skipped |
+| Live education retrieval / Fetch MCP | `UNVERIFIED` | No live source or Fetch request made; both opt-in integration cases skipped |
 | Human approval / caller identity | `UNVERIFIED` | Demo bearer context only; approval route is not implemented |
 | Persisted audit reconstruction | `NOT TESTED` | No populated database run was inspected; required evidence is specified in Section 11 |
 | Actual per-run cost | `NOT TESTED` | Cost formula and usage parsing tests are mocked; no actual run/bill reconciliation |

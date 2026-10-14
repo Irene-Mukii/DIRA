@@ -1,0 +1,13 @@
+{
+  "name": "dira-fetch-mcp-gateway",
+  "private": true,
+  "type": "module",
+  "version": "1.0.0",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.1"
+  },
+  "scripts": {
+    "test": "node --test server.test.mjs",
+    "start": "node server.mjs"
+  }
+}

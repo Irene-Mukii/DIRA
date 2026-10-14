@@ -4,16 +4,16 @@
 
 ## 1. Integration overview
 
-| Integration | Interface | Current implementation and verification status |
-|---|---|---|
-| GLM-5.3 Flash via Z.AI | Hosted model API, not MCP | `lib/models.ts` sends requests with timeout/error handling and captures usage when returned. Mocked request/usage and cost tests passed; no live request or provider billing comparison was made. |
-| PostgreSQL | Server-side database | Used by persistence, audit and cache services. The focused suite uses mocks; database-backed tests and run reconstruction were not executed in this audit. |
-| OpenAI Audio Transcriptions | Hosted HTTPS API, not MCP | Transcription client and call-recording path are implemented. No live account request was made; this remains an MVP privacy exception requiring review before go-live. |
-| Africa's Talking SMS | Hosted API, not MCP | Not implemented in the current application path. `lib/external-mcp/sms.ts` contains only a comment and there is no SMS call site. |
-| Africa's Talking Voice | Hosted API/SDK, not MCP | Request, queue, callback, recording and transcript-processing code exists; mocked demo/config tests passed. No live call, callback or recording download was verified. Calls can be chargeable. |
-| Keeper.sh calendar | Borrowed external MCP server | Endpoint/client/helper code exists, but the calendar helpers have no application call site and no OAuth-backed invocation is configured. The borrowed-MCP requirement is not met. |
-| Education-source retrieval | Dira service: direct HTTPS plus optional Fetch MCP | Bounded direct retrieval is implemented; Fetch MCP is an optional stdio backend, disabled by default. Mocked retrieval/cache tests passed; no live source or Fetch MCP request was made. |
-| Deployment/hosting | Platform | No hosting deployment was verified in this audit. A planning document's provider choice is not evidence of an operational deployment. |
+| Integration                 | Interface                                          | Current implementation and verification status                                                                                                                                                    |
+| --------------------------- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GLM-5.3 Flash via Z.AI      | Hosted model API, not MCP                          | `lib/models.ts` sends requests with timeout/error handling and captures usage when returned. Mocked request/usage and cost tests passed; no live request or provider billing comparison was made. |
+| PostgreSQL                  | Server-side database                               | Used by persistence, audit and cache services. The focused suite uses mocks; database-backed tests and run reconstruction were not executed in this audit.                                        |
+| OpenAI Audio Transcriptions | Hosted HTTPS API, not MCP                          | Transcription client and call-recording path are implemented. No live account request was made; this remains an MVP privacy exception requiring review before go-live.                            |
+| Africa's Talking SMS        | Hosted API, not MCP                                | Not implemented in the current application path. `lib/external-mcp/sms.ts` contains only a comment and there is no SMS call site.                                                                 |
+| Africa's Talking Voice      | Hosted API/SDK, not MCP                            | Request, queue, callback, recording and transcript-processing code exists; mocked demo/config tests passed. No live call, callback or recording download was verified. Calls can be chargeable.   |
+| Keeper.sh calendar          | Borrowed external MCP server                       | Endpoint/client/helper code exists, but the calendar helpers have no application call site and no OAuth-backed invocation is configured. The borrowed-MCP requirement is not met.                 |
+| Education-source retrieval  | Dira service: direct HTTPS plus optional Fetch MCP | Bounded direct retrieval is implemented; Fetch MCP is an optional stdio backend, disabled by default. Mocked retrieval/cache tests passed; no live source or Fetch MCP request was made.          |
+| Deployment/hosting          | Platform                                           | No hosting deployment was verified in this audit. A planning document's provider choice is not evidence of an operational deployment.                                                             |
 
 ## 2. Keeper.sh — borrowed calendar MCP (selected)
 
@@ -63,14 +63,22 @@ per-source status/error metadata. The Suggest Test graph requests retrieval
 only after it has enough eligible learner evidence to proceed. Learner names
 and observation text are not part of the query.
 
-The optional `lib/services/fetch-mcp.ts` adapter connects through the official
-MCP SDK over stdio and starts the pinned Fetch MCP package when
-`FETCH_MCP_ENABLED=true`; it is disabled by default. PostgreSQL Markdown cache
-entries are size-validated, keyed by source and canonical URL, and fresh for
-14 days. A failed Fetch refresh can fall back to Dira's validated direct
-result; it must not extend cache freshness. Fetch connection/request timeouts
-are 8 seconds; direct source requests use a 3.5-second timeout. These are
-implementation constants, not a configurable retrieval SLA.
+The `lib/services/fetch-mcp.ts` adapter uses the installed MCP SDK 1.32.1 and
+supports stdio (the local default) or authenticated Streamable HTTP. The
+Render-side Docker service in `fetch-mcp-server/` runs the pinned official
+Fetch package over stdio and exposes only its `fetch` tool over HTTPS with
+bearer authentication. Dira's remote configuration is server-side:
+`FETCH_MCP_TRANSPORT=http`, `FETCH_MCP_URL`, and `FETCH_MCP_TOKEN`; remote mode
+rejects missing credentials and non-HTTPS endpoints. Deployment is not
+verified until the Render service is deployed and the separate opt-in real
+remote integration test passes.
+
+PostgreSQL Markdown cache entries are size-validated, keyed by source and
+canonical URL, and fresh for 14 days. A failed Fetch refresh can fall back to
+Dira's validated direct result; Fetch failure remains independently recorded
+as a failed `fetch_request` event and is correlated across Dira and Render
+logs. Fetch connection, tool discovery, and request timeouts are bounded;
+these are implementation constants, not a configurable retrieval SLA.
 
 **Verification status:** focused mocked tests for source validation,
 source-specific failure, Fetch fallback, cache freshness, size and hashes

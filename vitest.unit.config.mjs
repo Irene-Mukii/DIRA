@@ -16,6 +16,7 @@ export default defineConfig({
       "tests/education-retrieval.test.mjs",
       "tests/education-markdown-cache.test.mjs",
       "tests/fetch-mcp.integration.test.mjs",
+      "tests/fetch-mcp-client.test.mjs",
       "tests/evidence-reasoning.test.mjs",
       "tests/models.test.mjs",
       "tests/model-cost.test.mjs",

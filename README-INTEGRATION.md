@@ -108,7 +108,7 @@ and must not be exposed to an untrusted client.
 `retrieve_education_resources` accepts:
 
 ```json
-{"query":"structured classroom discussion"}
+{ "query": "structured classroom discussion" }
 ```
 
 Its structured result contains a top-level `status` (`success`, `partial`,
@@ -126,12 +126,14 @@ environment variable):
 
 ```ts
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StreamableHTTPClientTransport } from
-  "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
-const client = new Client({ name: "independent-dira-client", version: "1.0.0" }, {
-  capabilities: {},
-});
+const client = new Client(
+  { name: "independent-dira-client", version: "1.0.0" },
+  {
+    capabilities: {},
+  },
+);
 const transport = new StreamableHTTPClientTransport(
   new URL(process.env.DIRA_MCP_SERVER_URL!),
   {
@@ -173,12 +175,27 @@ official IB, EEF, AMI, and WWC domains, discovers candidate pages, ranks
 evidence, validates URLs and excerpts, and owns the public tool response.
 Fetch MCP is not a separate learner-retrieval pipeline.
 
-Set `FETCH_MCP_ENABLED=true` to enable it; it is disabled by default. Dira
-starts the pinned official `mcp-server-fetch==2026.10.10` over stdio using
-`uvx --from mcp-server-fetch==2026.10.10 mcp-server-fetch`. `FETCH_MCP_COMMAND`
-can override the executable and otherwise defaults to `uvx`. On Windows Dira
-sets `PYTHONIOENCODING=utf-8`. The process needs package access at startup and
-outbound network access to the approved public sources. Fetch MCP introduces
+Set `FETCH_MCP_ENABLED=true` to enable it; it is disabled by default. Local
+development uses stdio and starts the pinned official
+`mcp-server-fetch==2026.10.10` with `uvx --from
+mcp-server-fetch==2026.10.10 mcp-server-fetch`. `FETCH_MCP_COMMAND` can
+override the executable and otherwise defaults to `uvx`. On Windows Dira sets
+`PYTHONIOENCODING=utf-8`.
+
+For Vercel, deploy the authenticated Docker gateway described in
+[`fetch-mcp-server/README.md`](./fetch-mcp-server/README.md) as a Render Web
+Service. The gateway runs the same pinned Fetch package locally and exposes
+only the `fetch` tool over stateless HTTPS Streamable HTTP. Configure these
+server-only Vercel variables in Preview first: `FETCH_MCP_ENABLED=true`,
+`FETCH_MCP_TRANSPORT=http`, `FETCH_MCP_URL=https://<render-service>/mcp`, and
+`FETCH_MCP_TOKEN` equal to Render's `FETCH_MCP_AUTH_TOKEN`. Configure
+Production separately only after the real Preview integration test succeeds.
+Never use `NEXT_PUBLIC_` for the token. Render's default HTTPS endpoint is
+publicly reachable but requires the bearer token for MCP requests; its health
+check reveals only readiness.
+
+The local stdio process and Render's container need package access at startup
+and outbound network access to the approved public sources. Fetch MCP introduces
 runtime/service availability, package-index, and network dependencies; no
 separate usage charge was identified for the selected package, but hosting,
 network, and package execution still have infrastructure cost. A blocked page
@@ -235,8 +252,8 @@ Run focused retrieval/cache tests:
 npm run test:suggest-test
 ```
 
-The opt-in integration test starts the real pinned Fetch MCP process and
-requires the local `dira_dev` database. On Windows, set `FETCH_MCP_COMMAND` to
+The opt-in stdio/PostgreSQL integration test starts the real pinned Fetch MCP
+process and requires the local `dira_dev` database. On Windows, set `FETCH_MCP_COMMAND` to
 the absolute path of `uvx.exe` if it is not on `PATH`:
 
 ```powershell
@@ -249,6 +266,22 @@ npm run test:fetch-mcp
 The test requires `DATABASE_URL` to point to loopback `dira_dev` as user
 `dira_dev`; it refuses other databases and cleans its unique cache row. If
 Fetch MCP is unavailable, the test is blocked rather than treated as a pass.
+
+The real Render endpoint test is separate and does not require the database:
+
+```powershell
+$env:RUN_FETCH_MCP_REMOTE_INTEGRATION = "true"
+$env:FETCH_MCP_ENABLED = "true"
+$env:FETCH_MCP_TRANSPORT = "http"
+$env:FETCH_MCP_URL = "https://<render-service>.onrender.com/mcp"
+$env:FETCH_MCP_TOKEN = "<Preview token>"
+npm run test:fetch-mcp
+```
+
+It discovers and invokes the real remote `fetch` tool and makes an outbound
+request to WWC. It does not prove production readiness unless run against the
+deployed Preview service with its real token; mocked gateway tests only verify
+local protocol behavior.
 
 ### Why Fetch MCP, and what the evaluations showed
 

@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: dira-fetch-mcp
+    runtime: docker
+    dockerfilePath: ./fetch-mcp-server/Dockerfile
+    dockerContext: ./fetch-mcp-server
+    healthCheckPath: /health
+    envVars:
+      - key: FETCH_MCP_AUTH_TOKEN
+        sync: false

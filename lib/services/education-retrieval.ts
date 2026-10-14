@@ -23,10 +23,7 @@ import {
 } from "@/lib/services/fetch-mcp";
 
 export type EducationRetrievalStatus =
-  | "success"
-  | "partial"
-  | "no_relevant_results"
-  | "failed";
+  "success" | "partial" | "no_relevant_results" | "failed";
 
 export interface EducationSource {
   key: "IB" | "EEF" | "AMI" | "WWC";
@@ -192,9 +189,10 @@ async function fetchOfficialText(
       redirect: "follow",
     });
     if (!response.ok) {
-      const code = response.status === 401 || response.status === 403
-        ? "access_restricted"
-        : "http_error";
+      const code =
+        response.status === 401 || response.status === 403
+          ? "access_restricted"
+          : "http_error";
       console.warn("Education source request failed", {
         source_domain: allowedDomain,
         target_url: sanitizedUrl(url.href),
@@ -207,10 +205,13 @@ async function fetchOfficialText(
     if (!isAllowedUrl(response.url, allowedDomain)) {
       throw new EducationRetrievalError("access_restricted", response.status);
     }
-    const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+    const contentType =
+      response.headers.get("content-type")?.toLowerCase() ?? "";
     if (
       contentType &&
-      !/(?:text\/html|application\/(?:xml|xhtml\+xml)|text\/xml|text\/plain)/.test(contentType)
+      !/(?:text\/html|application\/(?:xml|xhtml\+xml)|text\/xml|text\/plain)/.test(
+        contentType,
+      )
     ) {
       throw new EducationRetrievalError("unsupported_content", response.status);
     }
@@ -260,11 +261,13 @@ function sitemapLocations(xml: string, allowedDomain: string): URL[] {
 }
 
 function plainText(html: string): { title: string | null; text: string } {
-  const title = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1]
-    ?.replace(/<[^>]+>/g, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 200) ?? null;
+  const title =
+    html
+      .match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1]
+      ?.replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 200) ?? null;
   const text = html
     .replace(/<(script|style|noscript)[^>]*>[\s\S]*?<\/\1>/gi, " ")
     .replace(/<[^>]+>/g, " ")
@@ -296,8 +299,15 @@ function relevantExcerpt(text: string, queryTerms: string[]): string {
   return (best || text).slice(0, 600);
 }
 
-function markdownText(markdown: string): { title: string | null; text: string } {
-  const title = markdown.match(/^#{1,2}\s+(.+)$/m)?.[1]?.trim().slice(0, 200) ?? null;
+function markdownText(markdown: string): {
+  title: string | null;
+  text: string;
+} {
+  const title =
+    markdown
+      .match(/^#{1,2}\s+(.+)$/m)?.[1]
+      ?.trim()
+      .slice(0, 200) ?? null;
   const text = markdown
     .replace(/```[\s\S]*?```/g, " ")
     .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
@@ -315,9 +325,12 @@ async function cancelResponseBody(response: Response): Promise<void> {
   try {
     await response.body.cancel();
   } catch (error) {
-    console.warn("Education redirect validation could not cancel response body", {
-      errorName: error instanceof Error ? error.name : "UnknownError",
-    });
+    console.warn(
+      "Education redirect validation could not cancel response body",
+      {
+        errorName: error instanceof Error ? error.name : "UnknownError",
+      },
+    );
   }
 }
 
@@ -357,9 +370,10 @@ async function validateFetchRedirects(
 
     await cancelResponseBody(response);
     if (!response.ok) {
-      const code = response.status === 401 || response.status === 403
-        ? "access_restricted"
-        : "http_error";
+      const code =
+        response.status === 401 || response.status === 403
+          ? "access_restricted"
+          : "http_error";
       throw new EducationRetrievalError(code, response.status);
     }
     const finalUrl = isAllowedUrl(response.url || current.href, allowedDomain);
@@ -409,7 +423,7 @@ function mapFetchError(error: unknown): EducationRetrievalError {
       ? "timeout"
       : error instanceof TypeError
         ? "network_error"
-      : "provider_error",
+        : "provider_error",
   );
 }
 
@@ -502,7 +516,10 @@ async function retrieveFromSource(
           );
           return cached;
         }
-        const metadata = await getEducationMarkdownMetadata(source.key, cacheUrl);
+        const metadata = await getEducationMarkdownMetadata(
+          source.key,
+          cacheUrl,
+        );
         await logRetrievalActivity(
           runId,
           workflow,
@@ -537,26 +554,26 @@ async function retrieveFromSource(
           queryTerms,
         );
         let invalidCachedUrls = 0;
-        const relevantCachedEntries = cachedEntries.flatMap((entry) => {
-          const cachedUrl = isAllowedUrl(entry.canonicalUrl, source.domain);
-          if (
-            entry.sourceKey !== source.key ||
-            !cachedUrl ||
-            cachedUrl.href !== entry.canonicalUrl
-          ) {
-            invalidCachedUrls += 1;
-            return [];
-          }
-          const content = markdownText(entry.markdown);
-          if (!content.text) return [];
-          const score = relevanceScore(
-            `${entry.title ?? ""} ${content.title ?? ""} ${content.text}`,
-            queryTerms,
-          );
-          return score > 0
-            ? [{ entry, content, score }]
-            : [];
-        }).sort((left, right) => right.score - left.score);
+        const relevantCachedEntries = cachedEntries
+          .flatMap((entry) => {
+            const cachedUrl = isAllowedUrl(entry.canonicalUrl, source.domain);
+            if (
+              entry.sourceKey !== source.key ||
+              !cachedUrl ||
+              cachedUrl.href !== entry.canonicalUrl
+            ) {
+              invalidCachedUrls += 1;
+              return [];
+            }
+            const content = markdownText(entry.markdown);
+            if (!content.text) return [];
+            const score = relevanceScore(
+              `${entry.title ?? ""} ${content.title ?? ""} ${content.text}`,
+              queryTerms,
+            );
+            return score > 0 ? [{ entry, content, score }] : [];
+          })
+          .sort((left, right) => right.score - left.score);
         if (invalidCachedUrls > 0) {
           await logRetrievalActivity(
             runId,
@@ -636,6 +653,13 @@ async function retrieveFromSource(
     }> => {
       if (!getFetchSession) throw new FetchMcpError("provider_error");
       const fetchStartedAt = Date.now();
+      const configuredTransport = process.env.FETCH_MCP_TRANSPORT?.trim();
+      const transport =
+        configuredTransport === "http" || configuredTransport === "stdio"
+          ? configuredTransport
+          : configuredTransport
+            ? "invalid"
+            : "stdio";
       await logRetrievalActivity(
         runId,
         workflow,
@@ -645,6 +669,8 @@ async function retrieveFromSource(
         {
           requested_url: sanitizedUrl(pageUrl.href),
           server_version: FETCH_SERVER_VERSION,
+          transport,
+          correlation_id: runId,
         },
       );
       try {
@@ -686,6 +712,8 @@ async function retrieveFromSource(
             page_url: sanitizedUrl(safePageUrl.href),
             markdown_bytes: contentBytes,
             server_version: FETCH_SERVER_VERSION,
+            transport: activeSession.transport,
+            correlation_id: runId,
           },
           undefined,
           Date.now() - fetchStartedAt,
@@ -727,7 +755,10 @@ async function retrieveFromSource(
         }
         return {
           ...content,
-          score: relevanceScore(`${content.title ?? ""} ${content.text}`, queryTerms),
+          score: relevanceScore(
+            `${content.title ?? ""} ${content.text}`,
+            queryTerms,
+          ),
           pageUrl: safePageUrl,
         };
       } catch (error) {
@@ -750,6 +781,8 @@ async function retrieveFromSource(
           {
             requested_url: sanitizedUrl(pageUrl.href),
             server_version: FETCH_SERVER_VERSION,
+            transport,
+            correlation_id: runId,
           },
           retrievalError.code,
           Date.now() - fetchStartedAt,
@@ -784,7 +817,9 @@ async function retrieveFromSource(
         discoveryError = error;
       }
       const location = robots?.content.match(/^sitemap:\s*(\S+)/im)?.[1];
-      const sitemapUrl = location ? isAllowedUrl(location, source.domain) : null;
+      const sitemapUrl = location
+        ? isAllowedUrl(location, source.domain)
+        : null;
       if (sitemapUrl) {
         try {
           sitemap = await fetchOfficialText(
@@ -800,10 +835,7 @@ async function retrieveFromSource(
       }
     }
     if (!sitemap) {
-      if (
-        getFetchSession &&
-        discoveryError?.code === "response_too_large"
-      ) {
+      if (getFetchSession && discoveryError?.code === "response_too_large") {
         const homepageCache = await readCache(root.href);
         let homepage: {
           title: string | null;
@@ -852,7 +884,10 @@ async function retrieveFromSource(
           }
           if (homepage) {
             try {
-              const fetched = await retrieveMarkdown(root.href, homepage.pageUrl);
+              const fetched = await retrieveMarkdown(
+                root.href,
+                homepage.pageUrl,
+              );
               if (fetched.score >= homepage.score) {
                 homepage = { ...fetched, httpStatus: homepage.httpStatus };
               }
@@ -907,14 +942,17 @@ async function retrieveFromSource(
         pages.push(...sitemapLocations(childContent.content, source.domain));
       }
     }
-    const candidates = [...new Map(
-      pages
-        .map((url) => [url.href, url] as const)
-        .sort((left, right) => (
-          relevanceScore(right[0], queryTerms) -
-          relevanceScore(left[0], queryTerms)
-        )),
-    ).values()].slice(0, MAX_PAGES_PER_SOURCE);
+    const candidates = [
+      ...new Map(
+        pages
+          .map((url) => [url.href, url] as const)
+          .sort(
+            (left, right) =>
+              relevanceScore(right[0], queryTerms) -
+              relevanceScore(left[0], queryTerms),
+          ),
+      ).values(),
+    ].slice(0, MAX_PAGES_PER_SOURCE);
     let best: {
       url: URL;
       cacheUrl: string;
@@ -959,7 +997,10 @@ async function retrieveFromSource(
         const content = plainText(page.content);
         if (!content.text) continue;
         fetchedPages += 1;
-        const score = relevanceScore(`${content.title ?? ""} ${content.text}`, queryTerms);
+        const score = relevanceScore(
+          `${content.title ?? ""} ${content.text}`,
+          queryTerms,
+        );
         if (!best || score > best.score) {
           best = {
             url: new URL(page.pageUrl),
@@ -1049,14 +1090,15 @@ async function retrieveFromSource(
     });
     return result;
   } catch (error) {
-    const result = error instanceof EducationRetrievalError
-      ? failed(error.code, error.httpStatus)
-      : failed(
-          error instanceof Error &&
-            (error.name === "TimeoutError" || error.name === "AbortError")
-            ? "timeout"
-            : "provider_error",
-        );
+    const result =
+      error instanceof EducationRetrievalError
+        ? failed(error.code, error.httpStatus)
+        : failed(
+            error instanceof Error &&
+              (error.name === "TimeoutError" || error.name === "AbortError")
+              ? "timeout"
+              : "provider_error",
+          );
     return result;
   }
 }
@@ -1078,6 +1120,7 @@ export async function retrieveEducationEvidence(
         if (!fetchSessionState.promise) {
           fetchSessionState.promise = connectFetchMcp(
             FETCH_MCP_CONNECT_TIMEOUT_MS,
+            { runId, workflow },
           );
         }
         return fetchSessionState.promise;
@@ -1100,9 +1143,9 @@ export async function retrieveEducationEvidence(
     }
   }
   const normalizedQuery = query.replaceAll("_", " ").toLowerCase();
-  const queryTerms = [...new Set(
-    normalizedQuery.split(/\s+/).filter((term) => term.length > 2),
-  )].slice(0, 24);
+  const queryTerms = [
+    ...new Set(normalizedQuery.split(/\s+/).filter((term) => term.length > 2)),
+  ].slice(0, 24);
 
   const results = await Promise.all(
     sources.map((source) =>
@@ -1125,7 +1168,9 @@ export async function retrieveEducationEvidence(
       },
     );
   }
-  const successful = results.filter((source) => source.status === "success").length;
+  const successful = results.filter(
+    (source) => source.status === "success",
+  ).length;
   const queried = results.filter((source) => source.status !== "failed").length;
   const status: EducationRetrievalStatus =
     successful === results.length

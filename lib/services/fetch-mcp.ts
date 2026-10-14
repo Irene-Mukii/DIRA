@@ -1,10 +1,13 @@
 import "server-only";
 
+import { randomUUID } from "node:crypto";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import {
   getDefaultEnvironment,
   StdioClientTransport,
 } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { logAgentEvent } from "@/lib/agent/logger";
 
 export const FETCH_SERVER_VERSION = "2026.10.10";
 const FETCH_TOOL = "fetch";
@@ -29,6 +32,7 @@ export class FetchMcpError extends Error {
 }
 
 export interface FetchMcpSession {
+  transport: FetchMcpTransportMode;
   fetchMarkdown(
     url: string,
     maxLength: number,
@@ -37,22 +41,30 @@ export interface FetchMcpSession {
   close(): Promise<void>;
 }
 
+export type FetchMcpTransportMode = "stdio" | "http";
+
+export interface FetchMcpConnectionContext {
+  runId: string;
+  workflow: string;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function isTextContent(value: unknown): value is { type: "text"; text: string } {
+function isTextContent(
+  value: unknown,
+): value is { type: "text"; text: string } {
   return (
-    isRecord(value) &&
-    value.type === "text" &&
-    typeof value.text === "string"
+    isRecord(value) && value.type === "text" && typeof value.text === "string"
   );
 }
 
 function errorFromToolText(text: string): FetchMcpError {
   const status = Number(
-    text.match(/(?:status(?:\s+code)?\s*:?\s*|HTTP(?:\s+Error)?\s+)(\d{3})/i)?.[1] ??
-      text.match(/\b(401|403|404|408|413|429|5\d{2})\b/i)?.[1],
+    text.match(
+      /(?:status(?:\s+code)?\s*:?\s*|HTTP(?:\s+Error)?\s+)(\d{3})/i,
+    )?.[1] ?? text.match(/\b(401|403|404|408|413|429|5\d{2})\b/i)?.[1],
   );
   const httpStatus = Number.isInteger(status) ? status : null;
   if (httpStatus === 401 || httpStatus === 403) {
@@ -76,54 +88,204 @@ function errorFromToolText(text: string): FetchMcpError {
   return new FetchMcpError("provider_error");
 }
 
+function transportMode(): FetchMcpTransportMode {
+  const configured = process.env.FETCH_MCP_TRANSPORT?.trim() || "stdio";
+  if (configured === "stdio" || configured === "http") return configured;
+  throw new FetchMcpError("provider_error");
+}
+
+function createTransport(mode: FetchMcpTransportMode, correlationId: string) {
+  if (mode === "stdio") {
+    const executable = process.env.FETCH_MCP_COMMAND?.trim() || "uvx";
+    const environment = getDefaultEnvironment();
+    if (process.platform === "win32") {
+      environment.PYTHONIOENCODING = "utf-8";
+    }
+    return new StdioClientTransport({
+      command: executable,
+      args: [
+        "--from",
+        `mcp-server-fetch==${FETCH_SERVER_VERSION}`,
+        "mcp-server-fetch",
+      ],
+      env: environment,
+      stderr: "inherit",
+      maxBufferSize: 256 * 1024,
+    });
+  }
+
+  const endpoint = process.env.FETCH_MCP_URL?.trim();
+  const token = process.env.FETCH_MCP_TOKEN?.trim();
+  if (!endpoint || !token || token.length < 32 || /\s/.test(token)) {
+    throw new FetchMcpError("provider_error");
+  }
+
+  let url: URL;
+  try {
+    url = new URL(endpoint);
+  } catch {
+    throw new FetchMcpError("provider_error");
+  }
+  if (
+    url.protocol !== "https:" ||
+    url.username ||
+    url.password ||
+    url.search ||
+    url.hash
+  ) {
+    throw new FetchMcpError("provider_error");
+  }
+
+  return new StreamableHTTPClientTransport(url, {
+    requestInit: {
+      headers: {
+        authorization: `Bearer ${token}`,
+        "x-dira-correlation-id": correlationId,
+      },
+    },
+    reconnectionOptions: {
+      maxReconnectionDelay: 1_000,
+      initialReconnectionDelay: 100,
+      reconnectionDelayGrowFactor: 1,
+      maxRetries: 0,
+    },
+  });
+}
+
+async function logFetchMcpConnectionEvent(
+  context: FetchMcpConnectionContext,
+  eventType: "fetch_connection" | "fetch_tool_discovery",
+  action: string,
+  status: "started" | "success" | "error",
+  metadata: Record<string, unknown>,
+  error?: string,
+  durationMs?: number,
+): Promise<void> {
+  await logAgentEvent({
+    run_id: context.runId,
+    workflow: context.workflow,
+    event_type: eventType,
+    agent_action: action,
+    tool_name: "retrieve_education_resources",
+    status,
+    metadata: {
+      correlation_id: context.runId,
+      ...metadata,
+    },
+    ...(error ? { error } : {}),
+    ...(durationMs !== undefined ? { duration_ms: durationMs } : {}),
+  });
+}
+
 export async function connectFetchMcp(
   timeoutMs: number,
+  context: FetchMcpConnectionContext = {
+    runId: randomUUID(),
+    workflow: "education_retrieval",
+  },
 ): Promise<FetchMcpSession> {
-  const executable = process.env.FETCH_MCP_COMMAND?.trim() || "uvx";
-  const environment = getDefaultEnvironment();
-  if (process.platform === "win32") {
-    environment.PYTHONIOENCODING = "utf-8";
-  }
-  const transport = new StdioClientTransport({
-    command: executable,
-    args: [
-      "--from",
-      `mcp-server-fetch==${FETCH_SERVER_VERSION}`,
-      "mcp-server-fetch",
-    ],
-    env: environment,
-    stderr: "inherit",
-    maxBufferSize: 256 * 1024,
-  });
+  const startedAt = Date.now();
+  const configuredMode = process.env.FETCH_MCP_TRANSPORT?.trim();
+  const mode =
+    configuredMode === "stdio" || configuredMode === "http"
+      ? configuredMode
+      : configuredMode
+        ? "invalid"
+        : "stdio";
+  await logFetchMcpConnectionEvent(
+    context,
+    "fetch_connection",
+    "fetch_connection",
+    "started",
+    { transport: mode },
+  );
   const client = new Client(
     { name: "dira-education-retrieval", version: "1.0.0" },
     { capabilities: {} },
   );
+  let connected = false;
+  let discoveryStartedAt: number | null = null;
 
   try {
+    const transport = createTransport(transportMode(), context.runId);
     await client.connect(transport, { timeout: timeoutMs });
+    connected = true;
+    await logFetchMcpConnectionEvent(
+      context,
+      "fetch_connection",
+      "fetch_connection",
+      "success",
+      { transport: mode },
+      undefined,
+      Date.now() - startedAt,
+    );
+    discoveryStartedAt = Date.now();
+    await logFetchMcpConnectionEvent(
+      context,
+      "fetch_tool_discovery",
+      "fetch_tool_discovery",
+      "started",
+      { transport: mode },
+    );
     const tools = await client.listTools(undefined, { timeout: timeoutMs });
     const fetchTool = tools.tools.find((tool) => tool.name === FETCH_TOOL);
     if (!fetchTool) {
       throw new FetchMcpError("provider_error");
     }
+    await logFetchMcpConnectionEvent(
+      context,
+      "fetch_tool_discovery",
+      "fetch_tool_discovery",
+      "success",
+      { transport: mode, tool_name: FETCH_TOOL },
+      undefined,
+      Date.now() - discoveryStartedAt,
+    );
   } catch (error) {
+    let cleanupError: unknown;
     try {
       await client.close();
     } catch (closeError) {
+      cleanupError = closeError;
+    }
+    const fetchError =
+      error instanceof FetchMcpError
+        ? error
+        : error instanceof Error && /timeout|timed out/i.test(error.message)
+          ? new FetchMcpError("timeout")
+          : new FetchMcpError("provider_error");
+    if (connected && discoveryStartedAt !== null) {
+      await logFetchMcpConnectionEvent(
+        context,
+        "fetch_tool_discovery",
+        "fetch_tool_discovery",
+        "error",
+        { transport: mode },
+        fetchError.code,
+        Date.now() - discoveryStartedAt,
+      );
+    } else {
+      await logFetchMcpConnectionEvent(
+        context,
+        "fetch_connection",
+        "fetch_connection",
+        "error",
+        { transport: mode },
+        fetchError.code,
+        Date.now() - startedAt,
+      );
+    }
+    if (cleanupError) {
       throw new AggregateError(
-        [error, closeError],
+        [fetchError, cleanupError],
         "Fetch MCP connection failed and cleanup also failed",
       );
     }
-    if (error instanceof FetchMcpError) throw error;
-    if (error instanceof Error && /timeout|timed out/i.test(error.message)) {
-      throw new FetchMcpError("timeout");
-    }
-    throw new FetchMcpError("provider_error");
+    throw fetchError;
   }
 
   return {
+    transport: mode === "http" ? "http" : "stdio",
     async fetchMarkdown(url, maxLength, requestTimeoutMs) {
       let result;
       try {
@@ -142,7 +304,10 @@ export async function connectFetchMcp(
         );
       } catch (error) {
         if (error instanceof FetchMcpError) throw error;
-        if (error instanceof Error && /timeout|timed out/i.test(error.message)) {
+        if (
+          error instanceof Error &&
+          /timeout|timed out/i.test(error.message)
+        ) {
           throw new FetchMcpError("timeout");
         }
         throw new FetchMcpError("provider_error");

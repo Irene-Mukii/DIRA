@@ -13,6 +13,7 @@ const testDoubles = vi.hoisted(() => {
     })),
   };
   const session = {
+    transport: "stdio",
     fetchMarkdown: vi.fn(),
     close: vi.fn(async () => {}),
   };
@@ -47,10 +48,30 @@ vi.mock("@/lib/services/fetch-mcp", () => testDoubles.fetchMcp);
 vi.mock("@/lib/agent/logger", () => testDoubles.logger);
 
 const sources = [
-  { key: "IB", name: "International Baccalaureate", url: "https://www.ibo.org/", domain: "ibo.org" },
-  { key: "EEF", name: "Education Endowment Foundation", url: "https://educationendowmentfoundation.org.uk/", domain: "educationendowmentfoundation.org.uk" },
-  { key: "AMI", name: "Association Montessori Internationale", url: "https://montessori-ami.org/", domain: "montessori-ami.org" },
-  { key: "WWC", name: "What Works Clearinghouse", url: "https://ies.ed.gov/ncee/wwc/", domain: "ies.ed.gov" },
+  {
+    key: "IB",
+    name: "International Baccalaureate",
+    url: "https://www.ibo.org/",
+    domain: "ibo.org",
+  },
+  {
+    key: "EEF",
+    name: "Education Endowment Foundation",
+    url: "https://educationendowmentfoundation.org.uk/",
+    domain: "educationendowmentfoundation.org.uk",
+  },
+  {
+    key: "AMI",
+    name: "Association Montessori Internationale",
+    url: "https://montessori-ami.org/",
+    domain: "montessori-ami.org",
+  },
+  {
+    key: "WWC",
+    name: "What Works Clearinghouse",
+    url: "https://ies.ed.gov/ncee/wwc/",
+    domain: "ies.ed.gov",
+  },
 ];
 
 function response(url, body, status = 200) {
@@ -83,31 +104,43 @@ afterEach(() => {
 
 describe("education source retrieval", () => {
   it("returns exact official page citations and a relevant short excerpt", async () => {
-    vi.stubGlobal("fetch", vi.fn(async (input) => {
-      const url = new URL(String(input));
-      if (url.pathname === "/sitemap.xml") {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input) => {
+        const url = new URL(String(input));
+        if (url.pathname === "/sitemap.xml") {
+          return response(
+            url.href,
+            `<urlset><url><loc>https://${url.hostname}/resources/participation</loc></url></urlset>`,
+          );
+        }
         return response(
           url.href,
-          `<urlset><url><loc>https://${url.hostname}/resources/participation</loc></url></urlset>`,
+          "<html><head><title>Classroom participation</title></head><body>General school resources. Classroom participation can be supported through learner agency and structured discussion.</body></html>",
         );
-      }
-      return response(
-        url.href,
-        "<html><head><title>Classroom participation</title></head><body>General school resources. Classroom participation can be supported through learner agency and structured discussion.</body></html>",
-      );
-    }));
-    const { retrieveEducationEvidence } = await import(
-      "../lib/services/education-retrieval.ts"
+      }),
     );
+    const { retrieveEducationEvidence } =
+      await import("../lib/services/education-retrieval.ts");
 
     const result = await retrieveEducationEvidence("participation", sources);
 
     expect(result.status).toBe("success");
     expect(result.sources).toHaveLength(4);
-    expect(result.sources.every((source) => source.status === "success")).toBe(true);
-    expect(result.sources.every((source) => source.page_url?.includes("/resources/participation"))).toBe(true);
-    expect(result.sources.every((source) => source.http_status === 200)).toBe(true);
-    expect(result.sources.every((source) => source.retrieval_duration_ms >= 0)).toBe(true);
+    expect(result.sources.every((source) => source.status === "success")).toBe(
+      true,
+    );
+    expect(
+      result.sources.every((source) =>
+        source.page_url?.includes("/resources/participation"),
+      ),
+    ).toBe(true);
+    expect(result.sources.every((source) => source.http_status === 200)).toBe(
+      true,
+    );
+    expect(
+      result.sources.every((source) => source.retrieval_duration_ms >= 0),
+    ).toBe(true);
     expect(result.sources[0].excerpt).toMatch(/participation/i);
   });
 
@@ -120,40 +153,43 @@ describe("education source retrieval", () => {
       );
     });
     vi.stubGlobal("fetch", fetchMock);
-    const { retrieveEducationEvidence } = await import(
-      "../lib/services/education-retrieval.ts"
-    );
+    const { retrieveEducationEvidence } =
+      await import("../lib/services/education-retrieval.ts");
 
     const result = await retrieveEducationEvidence("academic", sources);
 
     expect(result.status).toBe("no_relevant_results");
     expect(fetchMock).toHaveBeenCalledTimes(4);
-    expect(result.sources.every((source) => source.page_url === null)).toBe(true);
+    expect(result.sources.every((source) => source.page_url === null)).toBe(
+      true,
+    );
   });
 
   it("continues retrieving from other sources when one source denies access", async () => {
-    vi.stubGlobal("fetch", vi.fn(async (input) => {
-      const url = new URL(String(input));
-      if (url.hostname === "www.ibo.org" && url.pathname === "/sitemap.xml") {
-        return response(url.href, "blocked", 403);
-      }
-      if (url.pathname === "/sitemap.xml") {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input) => {
+        const url = new URL(String(input));
+        if (url.hostname === "www.ibo.org" && url.pathname === "/sitemap.xml") {
+          return response(url.href, "blocked", 403);
+        }
+        if (url.pathname === "/sitemap.xml") {
+          return response(
+            url.href,
+            `<urlset><url><loc>https://${url.hostname}/resources/participation</loc></url></urlset>`,
+          );
+        }
+        if (url.hostname === "www.ibo.org" && url.pathname === "/robots.txt") {
+          return response(url.href, "User-agent: *");
+        }
         return response(
           url.href,
-          `<urlset><url><loc>https://${url.hostname}/resources/participation</loc></url></urlset>`,
+          "<html><head><title>Participation</title></head><body>Classroom participation benefits from structured discussion.</body></html>",
         );
-      }
-      if (url.hostname === "www.ibo.org" && url.pathname === "/robots.txt") {
-        return response(url.href, "User-agent: *");
-      }
-      return response(
-        url.href,
-        "<html><head><title>Participation</title></head><body>Classroom participation benefits from structured discussion.</body></html>",
-      );
-    }));
-    const { retrieveEducationEvidence } = await import(
-      "../lib/services/education-retrieval.ts"
+      }),
     );
+    const { retrieveEducationEvidence } =
+      await import("../lib/services/education-retrieval.ts");
 
     const result = await retrieveEducationEvidence("participation", sources);
 
@@ -163,33 +199,37 @@ describe("education source retrieval", () => {
       error: "access_restricted",
       http_status: 403,
     });
-    expect(result.sources.filter((source) => source.status === "success"))
-      .toHaveLength(3);
+    expect(
+      result.sources.filter((source) => source.status === "success"),
+    ).toHaveLength(3);
   });
 
   it("uses Fetch MCP only for approved pages and caches validated Markdown", async () => {
     const source = sources[0];
-    const markdown = "# Participation\n\nResearch supports structured classroom discussion.";
+    const markdown =
+      "# Participation\n\nResearch supports structured classroom discussion.";
     testDoubles.fetchMcp.session.fetchMarkdown.mockImplementation(
       async (url) => ({ markdown, pageUrl: url }),
     );
     vi.stubEnv("FETCH_MCP_ENABLED", "true");
-    vi.stubGlobal("fetch", vi.fn(async (input) => {
-      const url = new URL(String(input));
-      if (url.pathname === "/sitemap.xml") {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input) => {
+        const url = new URL(String(input));
+        if (url.pathname === "/sitemap.xml") {
+          return response(
+            url.href,
+            `<urlset><url><loc>https://${url.hostname}/resources/participation</loc></url></urlset>`,
+          );
+        }
         return response(
           url.href,
-          `<urlset><url><loc>https://${url.hostname}/resources/participation</loc></url></urlset>`,
+          "<html><head><title>Resource</title></head><body>Participation can be supported through learner agency and structured discussion.</body></html>",
         );
-      }
-      return response(
-        url.href,
-        "<html><head><title>Resource</title></head><body>Participation can be supported through learner agency and structured discussion.</body></html>",
-      );
-    }));
-    const { retrieveEducationEvidence } = await import(
-      "../lib/services/education-retrieval.ts"
+      }),
     );
+    const { retrieveEducationEvidence } =
+      await import("../lib/services/education-retrieval.ts");
 
     const result = await retrieveEducationEvidence("participation", [source], {
       runId: "11111111-1111-4111-8111-111111111111",
@@ -204,6 +244,16 @@ describe("education source retrieval", () => {
       "https://www.ibo.org/resources/participation",
       128_000,
       expect.any(Number),
+    );
+    expect(testDoubles.logger.logAgentEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event_type: "fetch_request",
+        status: "success",
+        metadata: expect.objectContaining({
+          transport: "stdio",
+          correlation_id: "11111111-1111-4111-8111-111111111111",
+        }),
+      }),
     );
     expect(testDoubles.cache.saveEducationMarkdown).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -228,18 +278,20 @@ describe("education source retrieval", () => {
     };
     testDoubles.cache.getFreshEducationMarkdown.mockResolvedValue(cacheEntry);
     vi.stubEnv("FETCH_MCP_ENABLED", "true");
-    vi.stubGlobal("fetch", vi.fn(async (input) => {
-      const url = new URL(String(input));
-      return url.pathname === "/sitemap.xml"
-        ? response(
-            url.href,
-            `<urlset><url><loc>https://${url.hostname}/resources/participation</loc></url></urlset>`,
-          )
-        : response(url.href, "should not fetch page content");
-    }));
-    const { retrieveEducationEvidence } = await import(
-      "../lib/services/education-retrieval.ts"
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input) => {
+        const url = new URL(String(input));
+        return url.pathname === "/sitemap.xml"
+          ? response(
+              url.href,
+              `<urlset><url><loc>https://${url.hostname}/resources/participation</loc></url></urlset>`,
+            )
+          : response(url.href, "should not fetch page content");
+      }),
     );
+    const { retrieveEducationEvidence } =
+      await import("../lib/services/education-retrieval.ts");
 
     const result = await retrieveEducationEvidence("participation", [source], {
       fetchMcpEnabled: true,
@@ -258,7 +310,8 @@ describe("education source retrieval", () => {
         sourceKey: source.key,
         canonicalUrl: "https://www.ibo.org/resources/participation",
         title: "Participation",
-        markdown: "# Participation\n\nCached evidence supports structured classroom discussion.",
+        markdown:
+          "# Participation\n\nCached evidence supports structured classroom discussion.",
         contentSha256: "a".repeat(64),
         contentBytes: 82,
         lastSuccessfulAt: new Date().toISOString(),
@@ -267,9 +320,8 @@ describe("education source retrieval", () => {
     vi.stubEnv("FETCH_MCP_ENABLED", "true");
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
-    const { retrieveEducationEvidence } = await import(
-      "../lib/services/education-retrieval.ts"
-    );
+    const { retrieveEducationEvidence } =
+      await import("../lib/services/education-retrieval.ts");
 
     const result = await retrieveEducationEvidence("participation", [source], {
       fetchMcpEnabled: true,
@@ -312,7 +364,8 @@ describe("education source retrieval", () => {
       },
     ]);
     testDoubles.fetchMcp.session.fetchMarkdown.mockResolvedValue({
-      markdown: "# Participation\n\nClassroom participation supports structured discussion.",
+      markdown:
+        "# Participation\n\nClassroom participation supports structured discussion.",
       pageUrl: "https://www.ibo.org/resources/participation",
     });
     const fetchMock = vi.fn(async (input) => {
@@ -329,18 +382,19 @@ describe("education source retrieval", () => {
     });
     vi.stubEnv("FETCH_MCP_ENABLED", "true");
     vi.stubGlobal("fetch", fetchMock);
-    const { retrieveEducationEvidence } = await import(
-      "../lib/services/education-retrieval.ts"
-    );
+    const { retrieveEducationEvidence } =
+      await import("../lib/services/education-retrieval.ts");
 
     const result = await retrieveEducationEvidence("participation", [source], {
       fetchMcpEnabled: true,
     });
 
     expect(result.sources[0].status).toBe("success");
-    expect(fetchMock.mock.calls.some(([input]) => (
-      new URL(String(input)).pathname === "/sitemap.xml"
-    ))).toBe(true);
+    expect(
+      fetchMock.mock.calls.some(
+        ([input]) => new URL(String(input)).pathname === "/sitemap.xml",
+      ),
+    ).toBe(true);
   });
 
   it("rejects off-domain Fetch redirects and keeps the validated direct result", async () => {
@@ -368,9 +422,8 @@ describe("education source retrieval", () => {
       );
     });
     vi.stubGlobal("fetch", fetchMock);
-    const { retrieveEducationEvidence } = await import(
-      "../lib/services/education-retrieval.ts"
-    );
+    const { retrieveEducationEvidence } =
+      await import("../lib/services/education-retrieval.ts");
 
     const result = await retrieveEducationEvidence("participation", [source], {
       fetchMcpEnabled: true,
@@ -379,7 +432,9 @@ describe("education source retrieval", () => {
     expect(result.sources[0].status).toBe("success");
     expect(result.sources[0].excerpt).toMatch(/structured discussion/i);
     expect(testDoubles.fetchMcp.connectFetchMcp).not.toHaveBeenCalled();
-    expect(fetchMock.mock.calls.some(([, init]) => init?.redirect === "manual")).toBe(true);
+    expect(
+      fetchMock.mock.calls.some(([, init]) => init?.redirect === "manual"),
+    ).toBe(true);
   });
 
   it("falls back to safe direct content when a stale cache refresh fails", async () => {
@@ -394,21 +449,23 @@ describe("education source retrieval", () => {
       new testDoubles.fetchMcp.FetchMcpError("timeout"),
     );
     vi.stubEnv("FETCH_MCP_ENABLED", "true");
-    vi.stubGlobal("fetch", vi.fn(async (input) => {
-      const url = new URL(String(input));
-      return url.pathname === "/sitemap.xml"
-        ? response(
-            url.href,
-            `<urlset><url><loc>https://${url.hostname}/resources/participation</loc></url></urlset>`,
-          )
-        : response(
-            url.href,
-            "<html><head><title>Classroom participation</title></head><body>Classroom participation benefits from structured discussion.</body></html>",
-          );
-    }));
-    const { retrieveEducationEvidence } = await import(
-      "../lib/services/education-retrieval.ts"
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input) => {
+        const url = new URL(String(input));
+        return url.pathname === "/sitemap.xml"
+          ? response(
+              url.href,
+              `<urlset><url><loc>https://${url.hostname}/resources/participation</loc></url></urlset>`,
+            )
+          : response(
+              url.href,
+              "<html><head><title>Classroom participation</title></head><body>Classroom participation benefits from structured discussion.</body></html>",
+            );
+      }),
     );
+    const { retrieveEducationEvidence } =
+      await import("../lib/services/education-retrieval.ts");
 
     const result = await retrieveEducationEvidence("participation", [source], {
       fetchMcpEnabled: true,
@@ -418,5 +475,16 @@ describe("education source retrieval", () => {
     expect(result.sources[0].excerpt).toMatch(/structured discussion/i);
     expect(testDoubles.fetchMcp.session.fetchMarkdown).toHaveBeenCalledOnce();
     expect(testDoubles.cache.saveEducationMarkdown).not.toHaveBeenCalled();
+    expect(testDoubles.logger.logAgentEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event_type: "fetch_request",
+        status: "error",
+        error: "timeout",
+        metadata: expect.objectContaining({
+          transport: "stdio",
+          correlation_id: "11111111-1111-4111-8111-111111111111",
+        }),
+      }),
+    );
   });
 });

@@ -18,6 +18,8 @@ export type AgentActivityEventType =
   | "cache_refresh"
   | "cache_refresh_failed"
   | "cache_body_expired"
+  | "fetch_connection"
+  | "fetch_tool_discovery"
   | "fetch_request";
 
 export interface AgentActivityEvent {
@@ -52,7 +54,7 @@ export async function logAgentEvent(
     event.model && event.usage !== undefined
       ? calculateModelCost(event.model, event.usage)
       : null;
-  const metadata = {
+  const metadata: Record<string, unknown> = {
     ...event.metadata,
     ...(cost
       ? {
@@ -62,17 +64,35 @@ export async function logAgentEvent(
         }
       : {}),
   };
+  const correlationId =
+    typeof metadata.correlation_id === "string" &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      metadata.correlation_id,
+    )
+      ? metadata.correlation_id
+      : undefined;
+  const transport =
+    metadata.transport === "stdio" || metadata.transport === "http"
+      ? metadata.transport
+      : undefined;
 
-  console.info(JSON.stringify({
-    timestamp,
-    run_id: event.run_id,
-    workflow: event.workflow,
-    event_type: eventType,
-    agent_action: event.agent_action,
-    tool_name: event.tool_name,
-    status: event.status,
-    ...(event.error ? { error: event.error } : {}),
-  }));
+  console.info(
+    JSON.stringify({
+      timestamp,
+      run_id: event.run_id,
+      workflow: event.workflow,
+      event_type: eventType,
+      agent_action: event.agent_action,
+      tool_name: event.tool_name,
+      status: event.status,
+      ...(correlationId ? { correlation_id: correlationId } : {}),
+      ...(transport ? { transport } : {}),
+      ...(event.duration_ms !== undefined
+        ? { duration_ms: event.duration_ms }
+        : {}),
+      ...(event.error ? { error: event.error } : {}),
+    }),
+  );
 
   try {
     const { pool } = await import("../db/client");
