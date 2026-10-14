@@ -8,6 +8,7 @@ import {
   type AgentMessage,
   type AgentFunctionTool,
 } from "@/lib/models";
+import { logAgentEvent } from "@/lib/agent/logger";
 
 export type ScheduledAgentTrigger = "prepare_queue" | "dispatch_due";
 
@@ -160,6 +161,16 @@ export async function runScheduledAgent(
   }
 
   const runId = randomUUID();
+  const workflow = `scheduled_${trigger}`;
+  await logAgentEvent({
+    run_id: runId,
+    workflow,
+    event_type: "run_started",
+    agent_action: "run_started",
+    tool_name: "scheduled_agent",
+    status: "started",
+    metadata: { trigger },
+  });
   const allowedNames = allowedToolNames(trigger);
   const session = await connectMcpServer({
     endpoint,
@@ -203,7 +214,11 @@ export async function runScheduledAgent(
     let totalCalls = 0;
 
     for (let turn = 0; turn < MAX_MODEL_TURNS; turn += 1) {
-      const completion = await createAgentCompletion(messages, tools);
+      const completion = await createAgentCompletion(messages, tools, {
+        runId,
+        workflow: `scheduled_${trigger}`,
+        attempt: turn + 1,
+      });
       lastContent = completion.content;
 
       if (completion.toolCalls.length === 0) {
@@ -233,7 +248,33 @@ export async function runScheduledAgent(
           (trigger === "dispatch_due" && dueCount !== null && dueCount > 0);
         const permitted =
           allowedNames.has(call.name) && uses < limit && dispatchReady;
+        await logAgentEvent({
+          run_id: runId,
+          workflow,
+          attempt: totalCalls,
+          event_type: "tool_proposed",
+          agent_action: "tool_proposed",
+          tool_name: call.name,
+          status: "success",
+          metadata: { turn: turn + 1 },
+        });
         if (!permitted) {
+          await logAgentEvent({
+            run_id: runId,
+            workflow,
+            attempt: totalCalls,
+            event_type: "tool_blocked",
+            agent_action: "tool_blocked",
+            tool_name: call.name,
+            status: "success",
+            metadata: {
+              reason: !allowedNames.has(call.name)
+                ? "not_allowed_for_trigger"
+                : uses >= limit
+                  ? "tool_use_limit"
+                  : "trigger_precondition",
+            },
+          });
           failureCount += 1;
           toolCalls.push({ name: call.name, succeeded: false });
           messages.push({
@@ -246,6 +287,16 @@ export async function runScheduledAgent(
 
         toolUseCounts.set(call.name, uses + 1);
         let toolOutput: string;
+        const toolStartedAt = Date.now();
+        await logAgentEvent({
+          run_id: runId,
+          workflow,
+          attempt: totalCalls,
+          event_type: "tool_executed",
+          agent_action: "tool_started",
+          tool_name: call.name,
+          status: "started",
+        });
         try {
           const output = await session.callTool(
             call.name,
@@ -261,6 +312,17 @@ export async function runScheduledAgent(
           if (toolError) {
             failureCount += 1;
           }
+          await logAgentEvent({
+            run_id: runId,
+            workflow,
+            attempt: totalCalls,
+            event_type: "tool_executed",
+            agent_action: "tool_finished",
+            tool_name: call.name,
+            status: toolError ? "error" : "success",
+            duration_ms: Date.now() - toolStartedAt,
+            ...(toolError ? { error: toolError.code } : {}),
+          });
 
           if (!toolError && call.name === "prepare_daily_follow_up_queue") {
             completedRequiredAction = true;
@@ -270,10 +332,21 @@ export async function runScheduledAgent(
           } else if (!toolError && call.name === "dispatch_one_due_follow_up") {
             completedRequiredAction = true;
           }
-        } catch {
+        } catch (error) {
           failureCount += 1;
           toolCalls.push({ name: call.name, succeeded: false });
           toolOutput = "The Dira MCP tool failed. No successful result was reported.";
+          await logAgentEvent({
+            run_id: runId,
+            workflow,
+            attempt: totalCalls,
+            event_type: "tool_executed",
+            agent_action: "tool_finished",
+            tool_name: call.name,
+            status: "error",
+            duration_ms: Date.now() - toolStartedAt,
+            error: error instanceof Error ? error.name : "UnknownError",
+          });
         }
 
         messages.push({
@@ -310,7 +383,7 @@ export async function runScheduledAgent(
           : "failed"
         : "completed";
 
-    return {
+    const result: ScheduledAgentResult = {
       run_id: runId,
       trigger,
       model: DIRA_AGENT_MODEL,
@@ -321,6 +394,31 @@ export async function runScheduledAgent(
           : "The scheduled agent did not complete all required work; inspect tool_calls before retrying.",
       tool_calls: toolCalls,
     };
+    await logAgentEvent({
+      run_id: runId,
+      workflow,
+      event_type: "run_finished",
+      agent_action: "run_finished",
+      tool_name: "scheduled_agent",
+      status: status === "failed" ? "error" : "success",
+      metadata: {
+        result_status: status,
+        trigger,
+        tool_call_count: toolCalls.length,
+      },
+    });
+    return result;
+  } catch (error) {
+    await logAgentEvent({
+      run_id: runId,
+      workflow,
+      event_type: "run_finished",
+      agent_action: "run_finished",
+      tool_name: "scheduled_agent",
+      status: "error",
+      error: error instanceof Error ? error.name : "UnknownError",
+    });
+    throw error;
   } finally {
     await session.close();
   }
@@ -385,6 +483,7 @@ export async function runCallTranscriptAgent(
       },
     ];
 
+    const runId = randomUUID();
     for (let turn = 0; turn < 3; turn += 1) {
       const completion = await createAgentCompletion(messages, [
         {
@@ -392,7 +491,11 @@ export async function runCallTranscriptAgent(
           description: tool.description ?? "",
           parameters: schema as AgentFunctionTool["parameters"],
         },
-      ]);
+      ], {
+        runId,
+        workflow: "call_transcript_drafts",
+        attempt: turn + 1,
+      });
       if (completion.toolCalls.length === 0) {
         break;
       }
