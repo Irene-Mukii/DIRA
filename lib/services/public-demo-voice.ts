@@ -1,7 +1,7 @@
 import "server-only";
 
 import { createHmac, randomUUID } from "node:crypto";
-import { pool } from "@/lib/db/client";
+import { getPool } from "@/lib/db/client";
 import { isE164 } from "@/lib/services/voice-config";
 
 export const PUBLIC_DEMO_CALL_LIMIT_PER_NUMBER = 1;
@@ -33,7 +33,7 @@ export async function reservePublicDemoCall(
 
   const phoneHash = hashPhoneNumber(phoneNumber);
   const eventId = randomUUID();
-  const client = await pool.connect();
+  const client = await getPool().connect();
 
   try {
     await client.query("BEGIN");
@@ -88,7 +88,7 @@ export async function completePublicDemoCallReservation(
   eventId: string,
   succeeded: boolean,
 ): Promise<void> {
-  const result = await pool.query(
+  const result = await getPool().query(
     `UPDATE agent_activity_logs
      SET status = $2
      WHERE id = $1

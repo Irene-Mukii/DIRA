@@ -1,7 +1,7 @@
 import "server-only";
 
 import { createHash, timingSafeEqual } from "node:crypto";
-import { pool } from "@/lib/db/client";
+import { getPool } from "@/lib/db/client";
 
 /**
  * Africa's Talking callback handling (voice, events and recording callbacks).
@@ -135,7 +135,7 @@ export async function ingestCallback(
     )
     .digest("hex");
 
-  const client = await pool.connect();
+  const client = await getPool().connect();
   try {
     await client.query("BEGIN");
     // The no-op update on conflict takes the row lock, serialising concurrent callbacks.

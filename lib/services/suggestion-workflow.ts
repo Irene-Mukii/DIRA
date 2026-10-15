@@ -1,7 +1,7 @@
 import "server-only";
 
 import { randomUUID } from "node:crypto";
-import { pool } from "@/lib/db/client";
+import { getPool } from "@/lib/db/client";
 import type {
   SuggestTestContext,
   SuggestTestResult,
@@ -33,7 +33,7 @@ export async function loadLearnerSuggestionContext(
   learnerId: string,
   context: SuggestTestContext,
 ): Promise<LearnerSuggestionContext> {
-  const teacher = await pool.query(
+  const teacher = await getPool().query(
     `SELECT 1 FROM teachers WHERE teacher_id = $1 AND school_id = $2 LIMIT 1`,
     [context.teacher_id, context.school_id],
   );
@@ -44,7 +44,7 @@ export async function loadLearnerSuggestionContext(
     );
   }
 
-  const assignment = await pool.query<{
+  const assignment = await getPool().query<{
     grade_level: string;
     stream_label: string;
   }>(
@@ -78,7 +78,7 @@ export async function loadLearnerSuggestionContext(
     );
   }
 
-  const observations = await pool.query<SuggestionObservation>(
+  const observations = await getPool().query<SuggestionObservation>(
     `SELECT observation_id, learner_id, teacher_id, observation_type,
             original_observation, reviewed_observation, observed_at,
             observation_date::text AS observation_date, activity_context,
@@ -113,7 +113,7 @@ export async function loadPreviousSuggestions(
   learnerId: string,
   context: SuggestTestContext,
 ): Promise<PreviousSuggestion[]> {
-  const result = await pool.query<{
+  const result = await getPool().query<{
     test_id: string;
     suggested_activity: string;
     activity_date: string;
@@ -185,7 +185,7 @@ export async function persistSuggestedProposal(
     throw new SuggestionPersistenceError("The generated proposal is incomplete", 400);
   }
 
-  const client = await pool.connect();
+  const client = await getPool().connect();
   try {
     await client.query("BEGIN");
     const existing = await client.query<{
@@ -405,7 +405,7 @@ export async function loadStoredProposal(
   status: "SUGGESTED" | "ACCEPTED" | "COMPLETED";
   suggestion: Extract<SuggestTestResult, { ok: true }>;
 } | null> {
-  const result = await pool.query<{
+  const result = await getPool().query<{
     test_id: string;
     status: "SUGGESTED" | "ACCEPTED" | "COMPLETED";
     suggestion_payload: Extract<SuggestTestResult, { ok: true }>;
@@ -546,7 +546,7 @@ export async function acceptSuggestion(
     );
   }
 
-  const alreadyAccepted = await pool.query<{
+  const alreadyAccepted = await getPool().query<{
     test_id: string;
     learner_id: string;
     activity_date: string;
@@ -596,7 +596,7 @@ export async function acceptSuggestion(
   const evidenceIds = [
     ...new Set(proposal.suggestion.cited_observations.map((item) => item.observation_id)),
   ];
-  const client = await pool.connect();
+  const client = await getPool().connect();
   try {
     await client.query("BEGIN");
     const teacher = await client.query(

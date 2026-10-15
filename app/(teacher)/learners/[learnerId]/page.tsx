@@ -5,7 +5,7 @@ import Card from "@/components/ui/Card";
 import ApprovedTests from "@/components/learners/ApprovedTests";
 import ObservationReviewControls from "@/components/observations/ObservationReviewControls";
 import SuggestionWorkflow from "@/components/evidence/SuggestionWorkflow";
-import { pool } from "@/lib/db/client";
+import { getPool } from "@/lib/db/client";
 import { resolveTeacherContext } from "@/lib/auth/teacher-context";
 
 interface LearnerProfile {
@@ -84,7 +84,7 @@ export default async function LearnerDetailPage({
         </Card>
       );
     }
-    const profileResult = await pool.query<LearnerProfile>(
+    const profileResult = await getPool().query<LearnerProfile>(
       `SELECT
          l.learner_id,
          l.display_name,
@@ -149,7 +149,7 @@ export default async function LearnerDetailPage({
       );
     }
 
-    const observationsResult = await pool.query<ObservationRow>(
+    const observationsResult = await getPool().query<ObservationRow>(
       `SELECT observation_id, original_observation, reviewed_observation,
               observation_type, observed_at, linked_test_id, teacher_review_status
        FROM observations
@@ -158,14 +158,14 @@ export default async function LearnerDetailPage({
        LIMIT 10`,
       [learnerId, learner.class_id, learner.academic_year],
     );
-    const testsResult = await pool.query<SuggestedTest>(
+    const testsResult = await getPool().query<SuggestedTest>(
       `SELECT test_id, suggested_activity
        FROM activity_tests
        WHERE learner_id = $1 AND status = 'ACCEPTED'
        ORDER BY activity_date DESC`,
       [learnerId],
     );
-    const approvedTestsResult = await pool.query<ApprovedTest>(
+    const approvedTestsResult = await getPool().query<ApprovedTest>(
       `SELECT t.test_id, t.exploration_question, t.hypothesis,
              t.suggested_activity, t.activity_date::text AS activity_date, t.purpose,
               t.what_to_observe

@@ -1,6 +1,6 @@
 import "server-only";
 
-import { pool } from "@/lib/db/client";
+import { getPool } from "@/lib/db/client";
 import {
   OBSERVATION_TYPES,
   type LogObservationContext,
@@ -94,21 +94,21 @@ export async function loadTeacherRoster(
   schoolId: string,
   onDate: Date,
 ): Promise<RosterLearner[]> {
-  const result = await pool.query<RosterLearner>(
+  const result = await getPool().query<RosterLearner>(
     `SELECT DISTINCT l.learner_id, l.display_name, e.class_id
-     FROM timetable_assignments ta
-     JOIN learner_enrollments e
-       ON e.class_id = ta.class_id
-      AND e.school_id = ta.school_id
-      AND e.academic_year = ta.academic_year
-     JOIN learners l ON l.learner_id = e.learner_id
-     WHERE ta.teacher_id = $1
-       AND ta.school_id = $2
-       AND ta.valid_from <= $3::date
-       AND (ta.valid_to IS NULL OR ta.valid_to >= $3::date)
-       AND e.enrolled_from <= $3::date
-       AND (e.enrolled_to IS NULL OR e.enrolled_to >= $3::date)
-     ORDER BY l.display_name, l.learner_id`,
+      FROM timetable_assignments ta
+      JOIN learner_enrollments e
+        ON e.class_id = ta.class_id
+       AND e.school_id = ta.school_id
+       AND e.academic_year = ta.academic_year
+      JOIN learners l ON l.learner_id = e.learner_id
+      WHERE ta.teacher_id = $1
+        AND ta.school_id = $2
+        AND ta.valid_from <= $3::date
+        AND (ta.valid_to IS NULL OR ta.valid_to >= $3::date)
+        AND e.enrolled_from <= $3::date
+        AND (e.enrolled_to IS NULL OR e.enrolled_to >= $3::date)
+      ORDER BY l.display_name, l.learner_id`,
     [teacherId, schoolId, onDate.toISOString().slice(0, 10)],
   );
   return result.rows;
@@ -125,7 +125,7 @@ export async function saveCallObservationDrafts(
   recordingId: string,
   segments: DraftSegmentInput[],
 ): Promise<{ saved: number; rejected: number }> {
-  const recording = await pool.query<{
+  const recording = await getPool().query<{
     call_id: string;
     transcript_text: string | null;
     processing_status: string;
@@ -136,10 +136,10 @@ export async function saveCallObservationDrafts(
   }>(
     `SELECT r.call_id, r.transcript_text, r.processing_status,
             c.teacher_id, t.school_id, c.is_demo, c.first_event_at
-     FROM call_recordings r
-     JOIN teacher_calls c ON c.call_id = r.call_id
-     LEFT JOIN teachers t ON t.teacher_id = c.teacher_id
-     WHERE r.recording_id = $1`,
+      FROM call_recordings r
+      JOIN teacher_calls c ON c.call_id = r.call_id
+      LEFT JOIN teachers t ON t.teacher_id = c.teacher_id
+      WHERE r.recording_id = $1`,
     [recordingId],
   );
   const row = recording.rows[0];
@@ -167,12 +167,12 @@ export async function saveCallObservationDrafts(
     )
       ? (segment.observation_type as ObservationType)
       : "other";
-    const inserted = await pool.query(
+    const inserted = await getPool().query(
       `INSERT INTO observation_drafts
          (recording_id, call_id, teacher_id, school_id, segment_index, segment_text,
           mentioned_name, observation_type, candidate_learner_ids, status, is_demo)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-       ON CONFLICT (recording_id, segment_index) DO NOTHING`,
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        ON CONFLICT (recording_id, segment_index) DO NOTHING`,
       [
         recordingId,
         row.call_id,
@@ -197,30 +197,30 @@ export async function saveCallObservationDrafts(
  * keep the whole transcript as one unassigned draft so nothing the teacher said is lost.
  */
 export async function saveUnsegmentedFallbackDraft(recordingId: string): Promise<void> {
-  await pool.query(
+  await getPool().query(
     `INSERT INTO observation_drafts
        (recording_id, call_id, teacher_id, school_id, segment_index, segment_text,
         observation_type, candidate_learner_ids, status, is_demo)
-     SELECT r.recording_id, r.call_id, c.teacher_id, t.school_id, 0,
-            LEFT(r.transcript_text, 20000), 'other', '{}', 'needs_learner', c.is_demo
-     FROM call_recordings r
-     JOIN teacher_calls c ON c.call_id = r.call_id
-     JOIN teachers t ON t.teacher_id = c.teacher_id
-     WHERE r.recording_id = $1 AND r.transcript_text IS NOT NULL
-     ON CONFLICT (recording_id, segment_index) DO NOTHING`,
+      SELECT r.recording_id, r.call_id, c.teacher_id, t.school_id, 0,
+             LEFT(r.transcript_text, 20000), 'other', '{}', 'needs_learner', c.is_demo
+      FROM call_recordings r
+      JOIN teacher_calls c ON c.call_id = r.call_id
+      JOIN teachers t ON t.teacher_id = c.teacher_id
+      WHERE r.recording_id = $1 AND r.transcript_text IS NOT NULL
+      ON CONFLICT (recording_id, segment_index) DO NOTHING`,
     [recordingId],
   );
 }
 
 /** Drafts awaiting (or past) teacher review for one teacher, newest first. */
 export async function listDrafts(context: LogObservationContext): Promise<DraftRow[]> {
-  const result = await pool.query<DraftRow>(
+  const result = await getPool().query<DraftRow>(
     `SELECT draft_id, segment_text, mentioned_name, observation_type,
             candidate_learner_ids, status, is_demo, confirmed_learner_id, created_at
-     FROM observation_drafts
-     WHERE teacher_id = $1 AND school_id = $2 AND status <> 'discarded'
-     ORDER BY created_at DESC, segment_index
-     LIMIT 100`,
+      FROM observation_drafts
+      WHERE teacher_id = $1 AND school_id = $2 AND status <> 'discarded'
+      ORDER BY created_at DESC, segment_index
+      LIMIT 100`,
     [context.teacher_id, context.school_id],
   );
   return result.rows;
@@ -237,7 +237,7 @@ export async function confirmDraft(
   learnerId: string | undefined,
   context: LogObservationContext,
 ): Promise<{ observation_id: string; duplicate: boolean }> {
-  const draft = await pool.query<{
+  const draft = await getPool().query<{
     segment_text: string;
     observation_type: string;
     candidate_learner_ids: string[];
@@ -251,10 +251,10 @@ export async function confirmDraft(
     `SELECT d.segment_text, d.observation_type, d.candidate_learner_ids, d.status,
             d.is_demo, d.recording_id, r.transcription_provider,
             c.first_event_at, d.observation_id
-     FROM observation_drafts d
-     JOIN teacher_calls c ON c.call_id = d.call_id
-     JOIN call_recordings r ON r.recording_id = d.recording_id
-     WHERE d.draft_id = $1 AND d.teacher_id = $2 AND d.school_id = $3`,
+      FROM observation_drafts d
+      JOIN teacher_calls c ON c.call_id = d.call_id
+      JOIN call_recordings r ON r.recording_id = d.recording_id
+      WHERE d.draft_id = $1 AND d.teacher_id = $2 AND d.school_id = $3`,
     [draftId, context.teacher_id, context.school_id],
   );
   const row = draft.rows[0];
@@ -297,10 +297,10 @@ export async function confirmDraft(
     context,
   );
 
-  await pool.query(
+  await getPool().query(
     `UPDATE observation_drafts
-     SET status = 'confirmed', confirmed_learner_id = $2, observation_id = $3, updated_at = NOW()
-     WHERE draft_id = $1 AND status IN ('needs_learner', 'ready', 'confirmed')`,
+      SET status = 'confirmed', confirmed_learner_id = $2, observation_id = $3, updated_at = NOW()
+      WHERE draft_id = $1 AND status IN ('needs_learner', 'ready', 'confirmed')`,
     [draftId, chosen, observation.observation_id],
   );
   return { observation_id: observation.observation_id, duplicate };
@@ -311,11 +311,11 @@ export async function discardDraft(
   draftId: string,
   context: LogObservationContext,
 ): Promise<void> {
-  await pool.query(
+  await getPool().query(
     `UPDATE observation_drafts
-     SET status = 'discarded', updated_at = NOW()
-     WHERE draft_id = $1 AND teacher_id = $2 AND school_id = $3
-       AND status IN ('needs_learner', 'ready')`,
+      SET status = 'discarded', updated_at = NOW()
+      WHERE draft_id = $1 AND teacher_id = $2 AND school_id = $3
+        AND status IN ('needs_learner', 'ready')`,
     [draftId, context.teacher_id, context.school_id],
   );
 }

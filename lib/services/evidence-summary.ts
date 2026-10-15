@@ -1,6 +1,6 @@
 import "server-only";
 import type { QueryResultRow } from "pg";
-import { pool } from "@/lib/db/client";
+import { getPool } from "@/lib/db/client";
 import type { SuggestTestContext } from "@/lib/mcp-tools/suggestTest";
 
 export interface EvidenceObservation {
@@ -104,7 +104,7 @@ async function runEvidenceQuery<T extends QueryResultRow>(
   values: unknown[],
 ) {
   try {
-    return await pool.query<T>(query, values);
+    return await getPool().query<T>(query, values);
   } catch (error) {
     logEvidenceQueryFailure(stage, error);
     throw error;

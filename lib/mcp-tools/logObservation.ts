@@ -1,4 +1,4 @@
-import { pool } from "../db/client";
+import { getPool } from "../db/client";
 import {
   CAPTURE_METHODS,
   OBSERVATION_TYPES,
@@ -121,7 +121,7 @@ export async function logObservation(
   const learnerId = input.learner_id.trim();
   const submissionId = input.submission_id.trim();
   const observationDate = observedAt.toISOString().slice(0, 10);
-  const client = await pool.connect();
+  const client = await getPool().connect();
 
   try {
     await client.query("BEGIN");

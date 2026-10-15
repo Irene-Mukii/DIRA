@@ -1,4 +1,4 @@
-import { pool } from "@/lib/db/client";
+import { getPool } from "@/lib/db/client";
 import {
   OBSERVATION_TYPES,
   type LogObservationContext,
@@ -46,7 +46,7 @@ export async function reviewObservation(
     throw new ObservationError("A trusted teacher and school context is required", 503);
   }
 
-  const client = await pool.connect();
+  const client = await getPool().connect();
   try {
     await client.query("BEGIN");
 

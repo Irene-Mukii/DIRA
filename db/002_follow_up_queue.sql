@@ -37,7 +37,7 @@ CREATE TABLE IF NOT EXISTS teacher_follow_up_jobs (
     idempotency_key TEXT NOT NULL UNIQUE,
     status TEXT NOT NULL DEFAULT 'queued' CHECK (
         status IN ('queued', 'cancelled')
-    ),
+    ), 
     cancel_reason TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()

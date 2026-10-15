@@ -1,7 +1,7 @@
 import "server-only";
 
 import { runCallTranscriptAgent } from "@/lib/agent/orchestrator";
-import { pool } from "@/lib/db/client";
+import { getPool } from "@/lib/db/client";
 import {
   transcribeRecording,
   TranscriptionError,
@@ -167,23 +167,23 @@ function filenameFor(contentType: string): string {
 async function claimForTranscription(
   recordingId: string | null,
 ): Promise<ClaimedRecording | null> {
-  const result = await pool.query<ClaimedRecording>(
+  const result = await getPool().query<ClaimedRecording>(
     `UPDATE call_recordings
-     SET status = 'downloading', attempts = attempts + 1, updated_at = NOW()
-     WHERE recording_id = (
-       SELECT recording_id FROM call_recordings
-       WHERE ($1::uuid IS NULL OR recording_id = $1)
-         AND attempts < $2
-         AND (
-           status IN ('pending', 'failed_retryable')
-           OR (status IN ('downloading', 'transcribing')
-               AND updated_at < NOW() - make_interval(mins => $3))
-         )
-       ORDER BY created_at
-       LIMIT 1
-       FOR UPDATE SKIP LOCKED
-     )
-     RETURNING recording_id, recording_url, attempts`,
+      SET status = 'downloading', attempts = attempts + 1, updated_at = NOW()
+      WHERE recording_id = (
+        SELECT recording_id FROM call_recordings
+        WHERE ($1::uuid IS NULL OR recording_id = $1)
+          AND attempts < $2
+          AND (
+            status IN ('pending', 'failed_retryable')
+            OR (status IN ('downloading', 'transcribing')
+                AND updated_at < NOW() - make_interval(mins => $3))
+          )
+        ORDER BY created_at
+        LIMIT 1
+        FOR UPDATE SKIP LOCKED
+      )
+      RETURNING recording_id, recording_url, attempts`,
     [recordingId, MAX_TRANSCRIPTION_ATTEMPTS, STALE_CLAIM_MINUTES],
   );
   return result.rows[0] ?? null;
@@ -193,17 +193,17 @@ async function claimForTranscription(
 async function transcribeClaimed(claimed: ClaimedRecording): Promise<boolean> {
   try {
     const { audio, contentType } = await downloadRecording(claimed.recording_url);
-    await pool.query(
+    await getPool().query(
       `UPDATE call_recordings SET status = 'transcribing', updated_at = NOW()
-       WHERE recording_id = $1`,
+        WHERE recording_id = $1`,
       [claimed.recording_id],
     );
     const transcript = await transcribeRecording(audio, contentType, filenameFor(contentType));
-    await pool.query(
+    await getPool().query(
       `UPDATE call_recordings
-       SET status = 'transcribed', transcript_text = $2, transcription_provider = $3,
-           last_error_code = NULL, updated_at = NOW()
-       WHERE recording_id = $1`,
+        SET status = 'transcribed', transcript_text = $2, transcription_provider = $3,
+            last_error_code = NULL, updated_at = NOW()
+        WHERE recording_id = $1`,
       [claimed.recording_id, transcript.text, transcript.provider],
     );
     return true;
@@ -216,10 +216,10 @@ async function transcribeClaimed(claimed: ClaimedRecording): Promise<boolean> {
       (error instanceof RecordingError || error instanceof TranscriptionError
         ? error.retryable
         : true) && claimed.attempts < MAX_TRANSCRIPTION_ATTEMPTS;
-    await pool.query(
+    await getPool().query(
       `UPDATE call_recordings
-       SET status = $2, last_error_code = $3, updated_at = NOW()
-       WHERE recording_id = $1`,
+        SET status = $2, last_error_code = $3, updated_at = NOW()
+        WHERE recording_id = $1`,
       [claimed.recording_id, retryable ? "failed_retryable" : "failed", code],
     );
     console.error("Call recording transcription step failed", {
@@ -237,29 +237,29 @@ async function transcribeClaimed(claimed: ClaimedRecording): Promise<boolean> {
  * whole transcript, so the teacher's words are never discarded.
  */
 async function processTranscribed(recordingId: string | null): Promise<boolean> {
-  const claim = await pool.query<{
+  const claim = await getPool().query<{
     recording_id: string;
     transcript_text: string;
     processing_attempts: number;
   }>(
     `UPDATE call_recordings
-     SET processing_status = 'processing',
-         processing_attempts = processing_attempts + 1, updated_at = NOW()
-     WHERE recording_id = (
-       SELECT recording_id FROM call_recordings
-       WHERE ($1::uuid IS NULL OR recording_id = $1)
-         AND status = 'transcribed'
-         AND processing_attempts < $2
-         AND (
-           processing_status IN ('pending', 'failed_retryable')
-           OR (processing_status = 'processing'
-               AND updated_at < NOW() - make_interval(mins => $3))
-         )
-       ORDER BY created_at
-       LIMIT 1
-       FOR UPDATE SKIP LOCKED
-     )
-     RETURNING recording_id, transcript_text, processing_attempts`,
+      SET processing_status = 'processing',
+          processing_attempts = processing_attempts + 1, updated_at = NOW()
+      WHERE recording_id = (
+        SELECT recording_id FROM call_recordings
+        WHERE ($1::uuid IS NULL OR recording_id = $1)
+          AND status = 'transcribed'
+          AND processing_attempts < $2
+          AND (
+            processing_status IN ('pending', 'failed_retryable')
+            OR (processing_status = 'processing'
+                AND updated_at < NOW() - make_interval(mins => $3))
+          )
+        ORDER BY created_at
+        LIMIT 1
+        FOR UPDATE SKIP LOCKED
+      )
+      RETURNING recording_id, transcript_text, processing_attempts`,
     [recordingId, MAX_PROCESSING_ATTEMPTS, STALE_CLAIM_MINUTES],
   );
   const row = claim.rows[0];
@@ -269,10 +269,10 @@ async function processTranscribed(recordingId: string | null): Promise<boolean> 
 
   try {
     await runCallTranscriptAgent(row.recording_id, row.transcript_text);
-    await pool.query(
+    await getPool().query(
       `UPDATE call_recordings
-       SET processing_status = 'done', last_error_code = NULL, updated_at = NOW()
-       WHERE recording_id = $1`,
+        SET processing_status = 'done', last_error_code = NULL, updated_at = NOW()
+        WHERE recording_id = $1`,
       [row.recording_id],
     );
     return true;
@@ -287,10 +287,10 @@ async function processTranscribed(recordingId: string | null): Promise<boolean> 
         fallbackSaved = false;
       }
     }
-    await pool.query(
+    await getPool().query(
       `UPDATE call_recordings
-       SET processing_status = $2, last_error_code = $3, updated_at = NOW()
-       WHERE recording_id = $1`,
+        SET processing_status = $2, last_error_code = $3, updated_at = NOW()
+        WHERE recording_id = $1`,
       [
         row.recording_id,
         lastAttempt ? (fallbackSaved ? "done" : "failed") : "failed_retryable",

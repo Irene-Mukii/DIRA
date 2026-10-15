@@ -1,7 +1,7 @@
 import "server-only";
 
 import { randomUUID } from "node:crypto";
-import { pool } from "@/lib/db/client";
+import { getPool } from "@/lib/db/client";
 import type { LogObservationContext } from "@/lib/db/schema";
 import {
   AfricaTalkingCallError,
@@ -112,15 +112,15 @@ export async function dispatchOneDueFollowUp(
   if (!destination || !isE164(destination)) {
     // Safety net if contact data changed between the eligibility check and the claim;
     // nothing was sent, so the job returns to the queue instead of being lost.
-    await pool.query(
+    await getPool().query(
       `UPDATE teacher_follow_up_jobs
        SET status = 'queued', attempt_count = GREATEST(attempt_count - 1, 0),
            last_error_code = 'missing_teacher_contact', updated_at = NOW()
        WHERE follow_up_job_id = $1 AND status = 'initiating'`,
-      [claimed.follow_up_job_id],
-    );
-    return null;
-  }
+    [claimed.follow_up_job_id],
+  );
+  return null;
+}
 
   try {
     const result = await initiateAfricaTalkingCall({
@@ -134,7 +134,7 @@ export async function dispatchOneDueFollowUp(
       ...(publicDemoAuthorization ? { publicDemoAuthorized: true as const } : {}),
     });
 
-    await pool.query(
+    await getPool().query(
       `UPDATE teacher_follow_up_jobs
        SET status = 'provider_accepted',
            provider_http_status = $2,
@@ -167,7 +167,7 @@ export async function dispatchOneDueFollowUp(
           );
     const status = callError.code;
 
-    await pool.query(
+    await getPool().query(
       `UPDATE teacher_follow_up_jobs
        SET status = $2,
            last_error_code = $3,
@@ -198,7 +198,7 @@ async function linkCallToJob(
   isDemo: boolean,
 ): Promise<void> {
   if (sessionId) {
-    await pool.query(
+    await getPool().query(
       `INSERT INTO teacher_calls
          (follow_up_job_id, teacher_id, provider_session_id, is_demo)
        VALUES ($1, $2, $3, $4)
@@ -214,7 +214,7 @@ async function linkCallToJob(
   console.warn("Africa's Talking accepted a call without a sessionId; callbacks cannot be linked", {
     followUpJobId,
   });
-  await pool.query(
+  await getPool().query(
     `INSERT INTO teacher_calls (follow_up_job_id, teacher_id, is_demo)
      VALUES ($1, $2, $3)
      ON CONFLICT (follow_up_job_id) WHERE follow_up_job_id IS NOT NULL DO NOTHING`,
@@ -227,11 +227,11 @@ async function linkCallToJob(
  * They are never retried automatically because the provider may already have dialled.
  */
 async function markStuckInitiatingJobs(now: Date): Promise<void> {
-  await pool.query(
+  await getPool().query(
     `UPDATE teacher_follow_up_jobs
-     SET status = 'outcome_unknown', last_error_code = 'stuck_initiating', updated_at = NOW()
-     WHERE status = 'initiating'
-       AND attempt_started_at < $1::timestamptz - make_interval(mins => $2)`,
+      SET status = 'outcome_unknown', last_error_code = 'stuck_initiating', updated_at = NOW()
+      WHERE status = 'initiating'
+        AND attempt_started_at < $1::timestamptz - make_interval(mins => $2)`,
     [now, STUCK_INITIATING_MINUTES],
   );
 }
@@ -305,7 +305,7 @@ async function claimDueFollowUp(
   teacherContext?: LogObservationContext,
   manualDemoJobId?: string,
 ): Promise<ClaimedCall | null> {
-  const client = await pool.connect();
+  const client = await getPool().connect();
   try {
     await client.query("BEGIN");
     const requestId = randomUUID();
@@ -395,11 +395,11 @@ async function claimDueFollowUp(
                    AND active_period.event_status = 'scheduled'
                    AND (active_period.calendar_date + active_period.start_time)
                          AT TIME ZONE school.timezone <= $1
-                   AND (active_period.calendar_date + active_period.end_time)
+               AND (active_period.calendar_date + active_period.end_time)
                          AT TIME ZONE school.timezone > $1
-               )
              )
            )
+         )
          ORDER BY job.scheduled_end_at, job.follow_up_job_id
          LIMIT 1
          FOR UPDATE OF job SKIP LOCKED

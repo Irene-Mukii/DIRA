@@ -3,7 +3,7 @@ import { connection } from "next/server";
 import Badge from "@/components/ui/Badge";
 import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
-import { pool } from "@/lib/db/client";
+import { getPool } from "@/lib/db/client";
 import { resolveTeacherContext } from "@/lib/auth/teacher-context";
 
 interface LearnerListRecord {
@@ -50,7 +50,7 @@ export default async function LearnersPage() {
       );
     }
 
-    const result = await pool.query<LearnerListRecord>(
+    const result = await getPool().query<LearnerListRecord>(
       `SELECT
          l.learner_id,
          l.display_name,

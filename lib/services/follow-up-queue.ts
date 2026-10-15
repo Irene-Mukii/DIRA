@@ -2,7 +2,7 @@ import "server-only";
 
 import { createHash, randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
-import { pool } from "@/lib/db/client";
+import { getPool } from "@/lib/db/client";
 import type { LogObservationContext } from "@/lib/db/schema";
 import {
   getVoiceDemoDestination,
@@ -86,11 +86,11 @@ export async function prepareDailyFollowUpQueue(
   teacherId?: string,
 ): Promise<{ generated_at: string; schools: SchoolQueueResult[] }> {
   const schoolResult = schoolId
-    ? await pool.query<SchoolRow>(
+    ? await getPool().query<SchoolRow>(
         "SELECT school_id, timezone FROM schools WHERE school_id = $1 ORDER BY school_id",
         [schoolId],
       )
-    : await pool.query<SchoolRow>(
+    : await getPool().query<SchoolRow>(
         "SELECT school_id, timezone FROM schools ORDER BY school_id",
       );
   if (schoolResult.rows.length === 0) {
@@ -178,7 +178,7 @@ export async function queueManualDemoFollowUp(
     throw new Error("Enable demo mode and configure a valid demo destination first");
   }
 
-  const schoolResult = await pool.query<{
+  const schoolResult = await getPool().query<{
     timezone: string | null;
     class_id: string | null;
   }>(
@@ -205,7 +205,7 @@ export async function queueManualDemoFollowUp(
     throw new Error("Configure the school's timezone before queueing a demo call");
   }
 
-  const existing = await pool.query<ManualDemoFollowUp>(
+  const existing = await getPool().query<ManualDemoFollowUp>(
     `SELECT follow_up_job_id, scheduled_end_at, TRUE AS already_queued
      FROM teacher_follow_up_jobs
      WHERE school_id = $1 AND teacher_id = $2 AND is_manual_demo = TRUE
@@ -218,7 +218,7 @@ export async function queueManualDemoFollowUp(
     return existing.rows[0];
   }
 
-  const inserted = await pool.query<ManualDemoFollowUp>(
+  const inserted = await getPool().query<ManualDemoFollowUp>(
     `INSERT INTO teacher_follow_up_jobs (
        calendar_entry_id, school_id, class_id, teacher_id,
        scheduled_date, scheduled_end_at, idempotency_key, is_manual_demo
@@ -245,7 +245,7 @@ export async function queueManualDemoFollowUp(
     return inserted.rows[0];
   }
 
-  const raced = await pool.query<ManualDemoFollowUp>(
+  const raced = await getPool().query<ManualDemoFollowUp>(
     `SELECT follow_up_job_id, scheduled_end_at, TRUE AS already_queued
      FROM teacher_follow_up_jobs
      WHERE school_id = $1 AND teacher_id = $2 AND is_manual_demo = TRUE
@@ -270,7 +270,7 @@ export async function listDueFollowUps(
     throw new Error("Due follow-up limit must be between 1 and 20");
   }
 
-  const result = await pool.query<DueFollowUp>(
+  const result = await getPool().query<DueFollowUp>(
     `SELECT follow_up_job_id, scheduled_date::text, scheduled_end_at, status
      FROM teacher_follow_up_jobs
      WHERE teacher_id = $1
@@ -293,7 +293,7 @@ async function prepareSchoolQueue(
   localDate: string,
   teacherId?: string,
 ): Promise<SchoolQueueResult> {
-  const client = await pool.connect();
+  const client = await getPool().connect();
   try {
     await client.query("BEGIN");
     await lockSchoolQueue(client, school.school_id, localDate);

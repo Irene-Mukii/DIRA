@@ -1,5 +1,5 @@
 
-import { pool } from "@/lib/db/client";
+import { getPool } from "@/lib/db/client";
 
 export const WEEKLY_ROTATION_SIZE = 10;
 
@@ -33,7 +33,7 @@ export async function getWeeklyRotation(
     throw new Error("limit must be an integer between 1 and 10");
   }
 
-  const result = await pool.query<RotationLearner>(
+  const result = await getPool().query<RotationLearner>(
     `
     WITH enrolled_learners AS (
       SELECT DISTINCT

@@ -95,9 +95,9 @@ export async function logAgentEvent(
   );
 
   try {
-    const { pool } = await import("../db/client");
+    const { getPool } = await import("../db/client");
 
-    await pool.query(
+    await getPool().query(
       `INSERT INTO agent_activity_logs (
         run_id,
         timestamp,

@@ -1,6 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
-import { pool } from "@/lib/db/client";
+import { getPool } from "@/lib/db/client";
 
 export const runtime = "nodejs";
 
@@ -79,7 +79,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const result = await pool.query(
+    const result = await getPool().query(
       `SELECT
          id,
          run_id,

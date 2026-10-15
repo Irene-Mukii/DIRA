@@ -4,7 +4,7 @@ import { connection } from "next/server";
 import { revalidatePath } from "next/cache";
 import Badge from "@/components/ui/Badge";
 import Card from "@/components/ui/Card";
-import { pool } from "@/lib/db/client";
+import { getPool } from "@/lib/db/client";
 import { resolveTeacherContext } from "@/lib/auth/teacher-context";
 import { dispatchOneDueFollowUp } from "@/lib/services/follow-up-dispatch";
 import { queueManualDemoFollowUp } from "@/lib/services/follow-up-queue";
@@ -178,12 +178,12 @@ export default async function FollowUpCallsPage({
     const { teacher_id: teacherId, school_id: schoolId } = context;
 
     const [teacherResult, callsResult, observationsResult] = await Promise.all([
-      pool.query<{ display_name: string }>(
+      getPool().query<{ display_name: string }>(
         `SELECT display_name FROM teachers
          WHERE teacher_id = $1 AND school_id = $2`,
         [teacherId, schoolId],
       ),
-      pool.query<FollowUpCallRow>(
+      getPool().query<FollowUpCallRow>(
         `SELECT
            job.follow_up_job_id,
            job.calendar_entry_id,
@@ -202,7 +202,7 @@ export default async function FollowUpCallsPage({
          LIMIT 50`,
         [teacherId, schoolId],
       ),
-      pool.query<PendingObservationRow>(
+      getPool().query<PendingObservationRow>(
         `SELECT
            observation.observation_id,
            observation.learner_id,
@@ -231,7 +231,7 @@ export default async function FollowUpCallsPage({
       );
     }
 
-    const timezoneResult = await pool.query<{ timezone: string | null }>(
+    const timezoneResult = await getPool().query<{ timezone: string | null }>(
       "SELECT timezone FROM schools WHERE school_id = $1",
       [schoolId],
     );

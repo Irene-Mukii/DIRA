@@ -31,7 +31,7 @@ export interface EducationMarkdownCacheMetadata {
 }
 
 async function getPool() {
-  return (await import("@/lib/db/client")).pool;
+  return (await import("@/lib/db/client")).getPool();
 }
 
 export async function expireStaleEducationMarkdown(): Promise<number> {

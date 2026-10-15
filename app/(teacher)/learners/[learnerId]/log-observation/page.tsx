@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { connection } from "next/server";
 import ObservationChat from "@/components/observations/ObservationChat";
-import { pool } from "@/lib/db/client";
+import { getPool } from "@/lib/db/client";
 import { resolveTeacherContext } from "@/lib/auth/teacher-context";
 
 interface LearnerForObservation {
@@ -77,7 +77,7 @@ export default async function LogObservationPage({
       return unavailable("Add a teacher record before logging observations.", learnerId);
     }
 
-    const result = await pool.query<LearnerForObservation>(
+    const result = await getPool().query<LearnerForObservation>(
       `SELECT
          l.learner_id,
          l.display_name,

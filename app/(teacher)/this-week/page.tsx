@@ -2,7 +2,7 @@ import { connection } from "next/server";
 import Link from "next/link";
 import Card from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
-import { pool } from "@/lib/db/client";
+import { getPool } from "@/lib/db/client";
 import { resolveTeacherContext } from "@/lib/auth/teacher-context";
 
 interface ThisWeekLearner {
@@ -49,7 +49,7 @@ export default async function ThisWeekPage() {
       );
     }
 
-    const result = await pool.query<ThisWeekLearner>(
+    const result = await getPool().query<ThisWeekLearner>(
       `SELECT
          l.learner_id,
          l.display_name,

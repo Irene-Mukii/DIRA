@@ -1,6 +1,6 @@
 import "server-only";
 
-import { pool } from "@/lib/db/client";
+import { getPool } from "@/lib/db/client";
 import {
   createRunId,
   logToolEvent,
@@ -553,7 +553,7 @@ export async function loadCurrentAssessments(
   context: SuggestTestContext,
 ): Promise<SavedAssessment[]> {
   if (testIds.length === 0) return [];
-  const result = await pool.query<RawAssessmentRow>(
+  const result = await getPool().query<RawAssessmentRow>(
     `SELECT a.assessment_id, a.test_id, a.learner_id, a.version,
             a.previous_assessment_id, a.classification, a.rationale,
            a.uncertainty, a.limitations, a.next_information_needed,
@@ -633,7 +633,7 @@ async function persistAssessment(
     outcomeText: string;
   },
 ): Promise<SavedAssessment> {
-  const client = await pool.connect();
+  const client = await getPool().connect();
   try {
     await client.query("BEGIN");
     const testResult = await client.query<{
