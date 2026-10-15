@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { pool } from "../../../../lib/db/client";
+import { getPool } from "../../../../lib/db/client";
 import { resolveTeacherContext } from "@/lib/auth/teacher-context";
 import { logObservation, ObservationError } from "../../../../lib/mcp-tools/logObservation";
 import {
@@ -143,7 +143,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const learnerScope = await pool.query<{
+    const learnerScope = await getPool().query<{
       class_id: string;
       academic_year: number;
     }>(
@@ -180,7 +180,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const result = await pool.query<ObservationChatRow>(
+    const result = await getPool().query<ObservationChatRow>(
       `SELECT observation_id, original_observation, reviewed_observation,
               teacher_review_status, created_at
        FROM observations
