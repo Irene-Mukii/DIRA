@@ -620,8 +620,8 @@ async function legacyRegenerateSuggestion(
 		);
 	}
 
-	const { pool } = await import("../db/client");
-	const alreadyRejected = await pool.query<{ test_id: string }>(
+	const { getPool } = await import("../db/client");
+	const alreadyRejected = await getPool().query<{ test_id: string }>(
 		`SELECT test_id
 		 FROM activity_tests
 		 WHERE approval_submission_id = $1
@@ -651,7 +651,7 @@ async function legacyRegenerateSuggestion(
 			409,
 		);
 	}
-	const client = await pool.connect();
+	const client = await getPool().connect();
 	let rejectedTestId = "";
 	let duplicate = false;
 	try {
@@ -818,8 +818,8 @@ async function legacyAcceptSuggestion(
 		throw new SuggestionPersistenceError("planned_date must be a valid YYYY-MM-DD date", 400);
 	}
 
-	const { pool } = await import("../db/client");
-	const existing = await pool.query<{
+	const { getPool } = await import("../db/client");
+	const existing = await getPool().query<{
 		test_id: string;
 		learner_id: string;
 		activity_date: string;
@@ -864,7 +864,7 @@ async function legacyAcceptSuggestion(
 	const payload = persistedSuggestion(suggestion);
 	const evidenceIds = [...new Set(payload.evidence_ids)];
 	const testId = `TEST-${randomUUID()}`;
-	const client = await pool.connect();
+	const client = await getPool().connect();
 	try {
 		await client.query("BEGIN");
 

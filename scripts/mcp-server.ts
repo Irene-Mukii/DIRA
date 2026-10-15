@@ -55,7 +55,7 @@ server.tool(
 const { logObservation } = await import(
   "../lib/mcp-tools/logObservation"
 );
-const { pool } = await import("../lib/db/client");
+const { getPool } = await import("../lib/db/client");
 
 // Match the application's existing demo-mode restriction.
 if (
@@ -65,7 +65,7 @@ if (
   throw new Error("MCP observation logging is not enabled in production demo mode");
 }
 
-const contextResult = await pool.query<{
+const contextResult = await getPool().query<{
   teacher_id: string;
   school_id: string;
 }>(

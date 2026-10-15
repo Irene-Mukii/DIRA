@@ -22,11 +22,11 @@ const transport = new StdioClientTransport({
 
 async function main() {
   // Import after dotenv configuration so DATABASE_URL is available.
-  const { pool } = await import("../lib/db/client");
+  const { getPool } = await import("../lib/db/client");
 
   try {
     // Match the trusted teacher context selected by the MCP server.
-    const contextResult = await pool.query<{
+    const contextResult = await getPool().query<{
       teacher_id: string;
       school_id: string;
     }>(
@@ -42,7 +42,7 @@ async function main() {
 
     // Pick a currently accepted linked test that this teacher can validly observe.
     // The observation consumes the test by changing its status to COMPLETED.
-    const candidateResult = await pool.query<{
+    const candidateResult = await getPool().query<{
       test_id: string;
       learner_id: string;
     }>(
@@ -118,7 +118,7 @@ async function main() {
     console.log("MCP end-to-end test passed.");
   } finally {
     await client.close();
-    await pool.end();
+    await getPool().end();
   }
 }
 

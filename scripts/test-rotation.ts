@@ -38,6 +38,6 @@ main()
     process.exitCode = 1;
   })
   .finally(async () => {
-    const { pool } = await import("../lib/db/client");
-    await pool.end();
+    const { getPool } = await import("../lib/db/client");
+    await getPool().end();
   });
