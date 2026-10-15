@@ -4,11 +4,11 @@
 >
 > **Audience:** Developers, reviewers, and stakeholders who need the essential technical picture.
 
-## 1. At a glance
+## 1. System Overview
 
 Dira helps teachers collect observations, explore questions via small classroom tests, and review an evidence-grounded Learner Evidence Card. The agent recommends; the teacher decides.
 
-## 2. Stack at a glance
+## 2. Technology Stack
 
 | Layer | Technology | Provider |
 |---|---|---|
@@ -20,7 +20,7 @@ Dira helps teachers collect observations, explore questions via small classroom 
 | Database | PostgreSQL | Dira data store |
 | Calendar | Keeper.sh (MCP) | Borrowed MCP server |
 
-## 3. Agent shape
+## 3. Agent Architecture and Workflow
 
 ```
 Teacher action -> App Router -> LangGraph.js workflow -> [MCP tools] -> GLM-5.3 -> [MCP tools] -> PostgreSQL
@@ -35,9 +35,9 @@ Teacher action -> App Router -> LangGraph.js workflow -> [MCP tools] -> GLM-5.3 
   5. Persist validated suggestion (Dira MCP tool) → PostgreSQL
 - Nodes communicate via the **MCP SDK in-process transport** — not recursive HTTP calls.
 
-## 4. MCP servers: built vs borrowed
+## 4.MCP Servers and External Integrations: built vs borrowed
 
-### Built for Dira
+### DIRA MCP Server
 
 Dira owns 13 MCP tools served by a single in-process MCP server (`lib/mcp-tools/dira-server.ts`):
 
@@ -58,7 +58,7 @@ Dira owns 13 MCP tools served by a single in-process MCP server (`lib/mcp-tools/
 
 **Why built:** These encapsulate Dira's core domain logic — observation persistence, evidence retrieval, test suggestion, and evidence summarization. They enforce validation, safety constraints, and teacher authorization at the tool boundary.
 
-### Borrowed MCP server
+### External MCP Server: Keeper.sh
 
 | Server | URL | Why borrowed |
 |---|---|---|
@@ -66,7 +66,7 @@ Dira owns 13 MCP tools served by a single in-process MCP server (`lib/mcp-tools/
 
 **Why borrowed:** Rather than implementing and maintaining separate calendar-provider adapters, Dira uses Keeper.sh as a unified, MCP-compliant gateway. Calendar data is timing context only — it never proves a lesson happened or a learner attended.
 
-### External services (not MCP servers)
+### External APIs
 
 | Service | Why not MCP | Integration |
 |---|---|---|
@@ -76,7 +76,7 @@ Dira owns 13 MCP tools served by a single in-process MCP server (`lib/mcp-tools/
 
 > **Key principle:** An external API is not automatically an MCP server. Dira connects to Keeper.sh through the MCP protocol. All other external services are integrated via direct API calls.
 
-## 5. MCP client
+## 5. MCP Client and Tool Communication
 
 `lib/agent/mcp-client.ts` provides:
 
@@ -88,11 +88,11 @@ Dira owns 13 MCP tools served by a single in-process MCP server (`lib/mcp-tools/
 
 The client connects to both Dira's own in-process MCP server (for Dira tools) and the remote Keeper.sh server (for calendar integration).
 
-## 6. Model abstraction
+## 6. Language Model Abstraction
 
 `lib/models.ts` keeps the GLM-5.3 provider/model configuration replaceable and server-side. No model keys are exposed in client components. The abstraction allows swapping providers without changing agent orchestration code.
 
-## 7. Data store
+## 7. Database and Data Management
 
 PostgreSQL is the system of record for:
 
@@ -103,7 +103,7 @@ PostgreSQL is the system of record for:
 
 See [`SYSTEM_ARCHITECTURE.md`](./SYSTEM_ARCHITECTURE.md) for the full entity-relationship diagram.
 
-## 8. Guardrails
+## 8. Guardrails/ Safety, Evidence, and Governance
 
 - **No learner classification:** observations are factual records; evidence summaries are grounded and validated, never diagnoses or pathway assignments.
 - **Evidence before conclusions:** every factual claim in a summary is traceable to source records.
@@ -111,6 +111,6 @@ See [`SYSTEM_ARCHITECTURE.md`](./SYSTEM_ARCHITECTURE.md) for the full entity-rel
 - **Source integrity:** external educational guidance is context only, cited only when retrieved within a strict timeout.
 - **Secrets stay server-side:** no API keys in client code or environment files committed to git.
 
-## 9. Next steps
+## 9. Further Documentation
 
 See [SYSTEM_ARCHITECTURE.md](./SYSTEM_ARCHITECTURE.md) for the full end-to-end journey, architecture diagrams, guardrail details, repository map, and evaluation expectations.
